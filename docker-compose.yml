@@ -1,0 +1,8 @@
+services:
+  stac-dc:
+    build: ./
+    volumes:
+      - type: bind
+        source: ./
+        target: /app
+    restart: unless-stopped
