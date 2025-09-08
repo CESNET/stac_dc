@@ -1,0 +1,12 @@
+# Python PyCache
+__pycache__
+
+# IntelliJ Idea
+.idea/
+
+# .env file with secrets
+00_secrets/
+*.env
+
+# logs
+log/
