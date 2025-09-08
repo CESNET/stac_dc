@@ -1,0 +1,111 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "assets": {
+        "ensemble-mean-grib": {
+          "href": null,
+          "type": "application/grib",
+          "title": "Ensemble mean product type in GRIB format"
+        },
+        "ensemble-members-grib": {
+          "href": null,
+          "type": "application/grib",
+          "title": "Ensemble members product type in GRIB format"
+        },
+        "ensemble-spread-grib": {
+          "href": null,
+          "type": "application/grib",
+          "title": "Ensemble spread product type in GRIB format"
+        },
+        "reanalysis-grib": {
+          "href": null,
+          "type": "application/grib",
+          "title": "Reanalysis product type in GRIB format"
+        },
+        "ensemble-mean-nc": {
+          "href": null,
+          "type": "application/netcdf",
+          "title": "Ensemble mean product type in NetCDF format"
+        },
+        "ensemble-members-nc": {
+          "href": null,
+          "type": "application/netcdf",
+          "title": "Ensemble members product type in NetCDF format"
+        },
+        "ensemble-spread-nc": {
+          "href": null,
+          "type": "application/netcdf",
+          "title": "Ensemble spread product type in NetCDF format"
+        },
+        "reanalysis-nc": {
+          "href": null,
+          "type": "application/netcdf",
+          "title": "Reanalysis product type in NetCDF format"
+        }
+      },
+      "links": [
+        {
+          "href": "",
+          "type": "application/json",
+          "rel": "self"
+        },
+        {
+          "href": "https://stac.cesnet.cz/collections/reanalysis-era5-pressure-levels",
+          "type": "application/json",
+          "rel": "collection",
+          "title": "ERA5 hourly data on pressure levels"
+        },
+        {
+          "href": "https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-pressure-levels",
+          "rel": "via"
+        }
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              19.00,
+			  51.08
+            ],
+            [
+              12.07,
+			  51.08
+            ],
+            [
+              12.07,
+			  48.48
+            ],
+            [
+              19.00,
+			  48.48
+            ],
+            [
+              19.00,
+			  51.08
+            ]
+          ]
+        ]
+      },
+      "collection": "reanalysis-era5-pressure-levels",
+      "properties": {
+        "start_datetime": "",
+        "end_datetime": "",
+        "datetime": ""
+      },
+      "stac_extensions": [
+        "https://stac-extensions.github.io/eo/v1.0.0/schema.json"
+      ],
+      "stac_version": "1.0.0",
+      "type": "Feature",
+      "id": "",
+      "bbox": [
+        12.07,
+        48.48,
+        19.00,
+        51.08
+      ]
+    }
+  ]
+}
