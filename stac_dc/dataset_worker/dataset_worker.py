@@ -108,24 +108,27 @@ class DatasetWorker(ABC):
 
         return last_downloaded_day
 
-    def _get_days_to_download(self, redownload_threshold: int) -> list[tuple[date, bool]]:
-        """
-        Method creates a list of days to download
-        bool = True - forced redownload since is in redownload_threshold window
-        """
-
-        redownload_from = (datetime.now(timezone.utc) - timedelta(weeks=redownload_threshold)).date()
+    def _get_days_to_download(
+            self, redownload_threshold: int, recent_days: int = 5
+    ) -> list[tuple[date, bool]]:
+        today = datetime.now(timezone.utc).date()
+        redownload_day = today - timedelta(weeks=redownload_threshold)
 
         last_downloaded_day = self._get_last_downloaded_day()
 
-        date_from = min(redownload_from, last_downloaded_day)
-        date_to = datetime.now(timezone.utc).date()
+        date_from = min(redownload_day, last_downloaded_day)
+        date_to = today
 
         days_to_download: list[tuple[date, bool]] = []
 
         for i in range(1, (date_to - date_from).days + 1):
             d = date_from + timedelta(days=i)
-            force_redownload = d >= redownload_from
+
+            force_redownload = (
+                    d >= today - timedelta(days=recent_days)  # last n recent_days
+                    or d == redownload_day  # ...or threshold day (for example 12 weeks back)
+            )
+
             days_to_download.append((d, force_redownload))
 
         return days_to_download
