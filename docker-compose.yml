@@ -6,3 +6,10 @@ services:
         source: ./
         target: /app
     restart: unless-stopped
+#    logging:
+#      - driver: "journald"
+#      - options:
+#          tag: "stac-dc"
+#          labels: "app"
+#    labels:
+#      - "app=stac-dc"
