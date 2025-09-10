@@ -109,7 +109,7 @@ class DatasetWorker(ABC):
         return last_downloaded_day
 
     def _get_days_to_download(
-            self, redownload_threshold: int, recent_days: int = 5
+            self, redownload_threshold: int, recent_days: int = 10
     ) -> list[tuple[date, bool]]:
         today = datetime.now(timezone.utc).date()
         redownload_day = today - timedelta(weeks=redownload_threshold)
