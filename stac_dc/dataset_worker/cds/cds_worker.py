@@ -109,17 +109,17 @@ class CDSWorker(DatasetWorker, ABC):
                         assets.append(self._make_asset(product_type, data_format, storage_path))
                         continue
 
-                    tmp_file = self._download_from_api(day, product_type, data_format)
+                    tmp_file = None
+                    try:
+                        tmp_file = self._download_from_api(day, product_type, data_format)
+                    except CDSWorkerDataNotAvailableYet as e:
+                        self._logger.info(f"[{day:%Y-%m-%d}] {e.message}")
+
                     if not tmp_file:
                         continue
 
                     self._save_to_storage(tmp_file, storage_path)
                     assets.append(self._make_asset(product_type, data_format, storage_path))
-
-                except CDSWorkerDataNotAvailableYet as e:
-                    self._logger.warning(
-                        f"[{day:%Y-%m-%d}] Not yet available: {product_type}.{data_format} ({e})"
-                    )
 
                 except Exception as e:
                     self._logger.error(
