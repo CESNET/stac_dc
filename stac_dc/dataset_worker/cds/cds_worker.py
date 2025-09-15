@@ -194,7 +194,7 @@ class CDSWorker(DatasetWorker, ABC):
             if (
                 http_error.response.status_code == 400
                 and "None of the data you have requested is available yet"
-                in http_error_content.get("detail", "")
+                in http_error_content.get("traceback", "")
             ):
                 raise CDSWorkerDataNotAvailableYet(f"Requested data not available yet") from http_error
             raise

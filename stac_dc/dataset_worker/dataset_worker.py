@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
     from stac_dc.catalogue import Catalogue
@@ -107,29 +107,50 @@ class DatasetWorker(ABC):
 
     def _get_days_to_download(
             self,
-            redownload_threshold: int, recent_days: int = 10, threshold_window: int = 2
-    ) -> list[tuple[date, bool]]:
+            redownload_threshold: int,  # weeks
+            recent_days: int = 10,  # days
+            threshold_window: int = 2  # days
+    ) -> List[Tuple[date, bool]]:
         today = datetime.now(timezone.utc).date()
-        redownload_day = today - timedelta(weeks=redownload_threshold)
+        last_downloaded = self._get_last_downloaded_day() or today
 
-        last_downloaded_day = self._get_last_downloaded_day()
+        def daterange(start: date, end: date):
+            while start <= end:
+                yield start
+                start += timedelta(days=1)
 
-        date_from = min(redownload_day, last_downloaded_day)
-        date_to = today
+        # intervals
+        gap_days = max(0, (today - last_downloaded).days)
+        redownload_anchor = today - timedelta(weeks=redownload_threshold)
 
-        days_to_download: list[tuple[date, bool]] = []
+        intervals = [
+            # redownload: Force download == True
+            (
+                redownload_anchor - timedelta(days=gap_days + threshold_window),
+                redownload_anchor + timedelta(days=threshold_window),
+                True,
+            ),
+            # middle: between last_downloaded and recent_start, Force download == False
+            (
+                last_downloaded + timedelta(days=1),
+                today - timedelta(days=recent_days),
+                False,
+            ),
+            # recent: last n recent_days, Force == True
+            (
+                today - timedelta(days=recent_days - 1),
+                today,
+                True,
+            ),
+        ]
 
-        for i in range(1, (date_to - date_from).days + 1):
-            d = date_from + timedelta(days=i)
+        days_map: dict[date, bool] = {}
+        for start, end, force in intervals:
+            for d in daterange(start, end):
+                if d <= today:
+                    days_map[d] = days_map.get(d, False) or force
 
-            force_redownload = (
-                    d >= today - timedelta(days=recent_days)
-                    or (redownload_day - timedelta(days=threshold_window) <= d <= redownload_day)
-            )
-
-            days_to_download.append((d, force_redownload))
-
-        return days_to_download
+        return sorted(days_map.items())
 
     def _set_last_downloaded_day(self, last_downloaded_day: date):
         """
