@@ -60,27 +60,27 @@ class DatasetOrchestrator:
             time.sleep(delay)
 
     def _run_once(self, **kwargs):
-        attempt = 0
+        self._worker.reset_run_attempt()
 
-        while attempt < self._max_retries:
+        while self._worker.get_run_attempt() < self._max_retries:
             try:
-                attempt += 1
-                self._logger.info(f"Starting attempt #{attempt}")
+                self._worker.get_run_attempt()
+                self._logger.info(f"Starting attempt #{self._worker.get_run_attempt()}")
                 self._worker.run(**kwargs)
                 self._logger.info(f"Finished successfully")
 
                 return
 
             except Exception as e:
-                self._logger.error(f"Error on attempt #{attempt}: {e}", exc_info=True)
+                self._logger.error(f"Error on attempt #{self._worker.get_run_attempt()}: {e}", exc_info=True)
 
-                if attempt >= self._max_retries:
-                    self._report_error(attempt=attempt, exiting=True)
+                if self._worker.get_run_attempt() >= self._max_retries:
+                    self._report_error(attempt=self._worker.get_run_attempt(), exiting=True)
                     return
 
                 else:
-                    delay = self._get_retry_delay(attempt)
-                    self._report_error(attempt=attempt, delay=delay, exiting=False)
+                    delay = self._get_retry_delay(self._worker.get_run_attempt())
+                    self._report_error(attempt=self._worker.get_run_attempt(), delay=delay, exiting=False)
                     time.sleep(delay)
 
     @staticmethod

@@ -19,6 +19,8 @@ from env import env
 
 
 class DatasetWorker(ABC):
+    _run_attempt: int
+
     _last_downloaded_day_filename: str = "last_downloaded_day.json"
 
     _dataset: str
@@ -34,6 +36,8 @@ class DatasetWorker(ABC):
             catalogue: Catalogue,
             logger: logging.Logger = logging.getLogger(env.get_app__name()),
     ):
+        self._run_attempt: int = 0
+
         self._dataset: str = dataset
         self._aoi: AOI = aoi
 
@@ -46,6 +50,15 @@ class DatasetWorker(ABC):
         self._catalogue: Catalogue = catalogue
 
         self._logger: logging.Logger = logger
+
+    def get_run_attempt(self) -> int:
+        return self._run_attempt
+
+    def increase_run_attempt(self) -> None:
+        self._run_attempt = self.get_run_attempt() + 1
+
+    def reset_run_attempt(self) -> None:
+        self._run_attempt = 0
 
     def get_dataset(self) -> str:
         return self._dataset

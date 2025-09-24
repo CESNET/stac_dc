@@ -1,6 +1,7 @@
 import json
 import logging
 import tempfile
+
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
@@ -89,6 +90,8 @@ class CDSWorker(DatasetWorker, ABC):
             self._set_last_downloaded_day(day)
 
             self._logger.info(f"[{day:%Y-%m-%d}] Finished processing")
+
+            self.reset_run_attempt()
 
     # ---------------------------------------------------------------------
     # Helpers for run()

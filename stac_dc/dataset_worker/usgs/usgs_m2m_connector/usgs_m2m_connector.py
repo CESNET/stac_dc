@@ -59,7 +59,10 @@ class USGSM2MConnector:
         if self._api_token is None:
             raise USGSM2MTokenNotObtainedException()
 
-    def _scene_search(self, dataset, geojson, day_start, day_end):
+    def _scene_search(
+            self,
+            dataset: str, geojson: dict, day_start: datetime, day_end: datetime, max_results: int = 10000
+    ):
         """
         Method prepares M2M API payload dictionary for obtaining the relevant scenes for dataset,
         polygon, and date range.
@@ -72,7 +75,7 @@ class USGSM2MConnector:
         """
 
         api_payload = {
-            "maxResults": 10000,
+            "maxResults": max_results,
             "datasetName": dataset,
             "sceneFilter": {
                 "spatialFilter": {
@@ -93,7 +96,7 @@ class USGSM2MConnector:
 
     def _scene_list_add(self, label, dataset_name, entity_ids):
         """
-        Method adds scenest to M2M API scene list defined by label
+        Method adds scenes to M2M API scene list defined by label
 
         :param label: string: label of M2M API scene list into which demandes datasets and entity-ids are added
         :param dataset_name: string: name of demanded dataset
@@ -124,7 +127,7 @@ class USGSM2MConnector:
 
         self._send_request('scene-list-remove', api_payload)
 
-    def _download_options(self, label, dataset):
+    def _download_options(self, label: str, dataset):
         """
         Method retrieves download options (mainly URLs and filesizes) from M2M API
 
@@ -265,6 +268,39 @@ class USGSM2MConnector:
             )
 
         return downloadable_urls
+
+    def download_file(self, url: str, output_path: str, chunk_size: int = 1024 * 1024, max_retries: int = 5):
+        """
+        Downloads a file from given URL to the specified output_path.
+
+        :param url: download URL obtained from get_downloadable_files
+        :param output_path: path where file will be saved
+        :param chunk_size: how many bytes to read at once (default 1 MB)
+        :param max_retries: how many times to retry on failure (default 5, will always try at least once)
+        :return: output_path
+        """
+
+        if max_retries <= 0:
+            max_retries = 1
+
+        retry = 0
+        while retry <= max_retries:
+            try:
+                self._logger.info(f"Downloading {url} -> {output_path}")
+                with requests.get(url, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    with open(output_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                return output_path
+            except Exception as e:
+                retry += 1
+                self._logger.warning(f"Download failed ({retry}/{max_retries}): {e}")
+                if retry > max_retries:
+                    raise
+                time.sleep((1 + random.random()) * 5)
 
     def get_downloadable_files(
             self,

@@ -90,7 +90,7 @@ class Env:
     def _load_landsat(self):
         load_dotenv("landsat.env")
 
-        self._landsat['demanded_datasets'] = os.getenv("LANDSAT__DEMANDED_DATASETS", default=None)
+        self._landsat['datasets_aios'] = json.loads(os.getenv("LANDSAT__DATASET_AIO", "[]"))
 
         self._landsat['s3_host'] = os.getenv("LANDSAT__S3_HOST", default=None)
         self._landsat['s3_host_bucket'] = os.getenv("LANDSAT__S3_HOST_BUCKET", default=None)
@@ -119,7 +119,7 @@ class Env:
         datasets_aios = []
 
         datasets_aios.extend(self.get_era5()['datasets_aios'])
-        # datasets_aios.extend(self.get_landsat()['datasets_aios'])
+        datasets_aios.extend(self.get_landsat()['datasets_aios'])
 
         return datasets_aios
 

@@ -2,9 +2,6 @@ import logging
 
 from stac_dc.dataset_worker.cds import ERA5Worker
 
-from stac_dc.storage import S3
-from stac_dc.catalogue import STAC
-
 from env import env
 
 
@@ -44,12 +41,6 @@ class ReanalysisERA5PressureLevelsWorker(ERA5Worker):
             logger=logger,
             **kwargs
         )
-
-    def _get_redownload_threshold(self) -> int:
-        return env.get_era5()['redownload_threshold']
-
-    def get_catalogue_download_host(self):
-        return env.get_era5()['stac_asset_download_root']
 
     def _prepare_cdsapi_call_dict(self, day, product_type, data_format):
         return {
