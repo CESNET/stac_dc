@@ -1,34 +1,45 @@
+import httpx
 import json
 import logging
 import os
 import random
+import re
 import time
-import requests
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Dict, List, Tuple
+from urllib.parse import urlparse
 
 from env import env
-
 from .exceptions.usgs_m2m_connector import *
 
 
 class USGSM2MConnector:
-    _logger: logging.Logger = None
+    """
+    Client for interacting with the USGS M2M API for Landsat data.
+    """
 
+    _logger: logging.Logger = None
     _api_url: str = None
     _username: str = None
+    _scene_label: str = None
     _token: str = None
+    _api_token: str = None
+    _api_token_valid_until: datetime = datetime.now(timezone.utc)
 
     def __init__(
             self,
-            api_url=env.get_landsat()['m2m_api_url'],
-            username=env.get_landsat()['m2m_username'],
-            token=env.get_landsat()['m2m_token'],
-            logger=logging.getLogger(env.get_app__name()),
+            api_url: str = env.get_landsat()['m2m_api_url'],
+            username: str = env.get_landsat()['m2m_username'],
+            token: str = env.get_landsat()['m2m_token'],
+            scene_label: str = env.get_landsat()['m2m_scene_label'],
+            logger: logging.Logger = logging.getLogger(env.get_app__name()),
     ):
         self._api_url = api_url
         self._username = username
         self._token = token
+        self._scene_label = scene_label
 
         self._logger = logger
 
@@ -36,14 +47,15 @@ class USGSM2MConnector:
 
     def _login_token(self):
         """
-        Method is used for obtaining the M2M API access token using user's username and login token
-
-        :return: None, the value of M2M API access token is stored in self._api_token
+        Obtains the M2M API access token using the user's username and login token.
         """
-        if (self._username is None) or (self._token is None):
+
+        if not self._username or not self._token:
             raise USGSM2MCredentialsNotProvided()
 
         self._api_token = None
+
+        # Set expiration to 2 hours
         self._api_token_valid_until = datetime.now(timezone.utc) + timedelta(hours=2)
 
         api_payload = {
@@ -51,27 +63,30 @@ class USGSM2MConnector:
             "token": self._token
         }
 
-        response = self._send_request('login-token', api_payload)
-        response_content = json.loads(response)
+        response_content = self._send_request('login-token', api_payload)
+        response_data = json.loads(response_content)
+        self._api_token = response_data.get('data')
 
-        self._api_token = response_content['data']
-
-        if self._api_token is None:
+        if not self._api_token:
             raise USGSM2MTokenNotObtainedException()
+
+        self._logger.info("Successfully obtained M2M API access token.")
+
+    def _refresh_token_if_expired(self):
+        """
+        Refreshes the API token if expired
+        """
+
+        if self._api_token_valid_until < datetime.now(timezone.utc):
+            self._login_token()
 
     def _scene_search(
             self,
             dataset: str, geojson: dict, day_start: datetime, day_end: datetime, max_results: int = 10000
-    ):
+    ) -> Dict:
         """
-        Method prepares M2M API payload dictionary for obtaining the relevant scenes for dataset,
-        polygon, and date range.
-
-        :param dataset: string: name of demanded dataset
-        :param geojson: dictionary representation of GeoJSON polygon
-        :param day_start: datetime: date from which the scenes ought to be demanded
-        :param day_end: datetime: date to which the scenes ought to be demanded
-        :return: dict of scene-search api endpoint (https://m2m.cr.usgs.gov/api/docs/reference/#scene-search)
+        Searches for relevant scenes for a given dataset, GeoJSON polygon, and date range.
+        Returns a dictionary containing search results.
         """
 
         api_payload = {
@@ -89,23 +104,17 @@ class USGSM2MConnector:
             }
         }
 
-        response = self._send_request('scene-search', api_payload)
-        scenes = json.loads(response)
+        response_content = self._send_request('scene-search', api_payload)
+        scenes = json.loads(response_content)
+        return scenes.get('data', {})
 
-        return scenes['data']
-
-    def _scene_list_add(self, label, dataset_name, entity_ids):
+    def _scene_list_add(self, dataset_name: str, entity_ids: List[str]):
         """
-        Method adds scenes to M2M API scene list defined by label
-
-        :param label: string: label of M2M API scene list into which demandes datasets and entity-ids are added
-        :param dataset_name: string: name of demanded dataset
-        :param entity_ids: list of entity_ids
-        :return: None
+        Adds scenes to a scene list defined by a label in the M2M API.
         """
 
         api_payload = {
-            "listId": label,
+            "listId": self._scene_label,
             "datasetName": dataset_name,
             "idField": "entityId",
             "entityIds": entity_ids
@@ -113,269 +122,226 @@ class USGSM2MConnector:
 
         self._send_request('scene-list-add', api_payload)
 
-    def scene_list_remove(self, label=env.get_landsat()['m2m_scene_label']):
+        self._logger.info(f"Added {len(entity_ids)} scenes to scene list '{self._scene_label}'.")
+
+    def scene_list_remove(self):
         """
-        Removes scene list defined by label name from M2M API
-
-        :param label: string: name (label) of M2M API scene list
-        :return: None
+        Removes a scene list from the M2M API if it exists.
         """
 
-        api_payload = {
-            "listId": label
-        }
+        try:
+            api_payload = {"listId": self._scene_label}
+            self._send_request('scene-list-remove', api_payload)
+            self._logger.info(f"Successfully removed scene list '{self._scene_label}'.")
 
-        self._send_request('scene-list-remove', api_payload)
+        except Exception as e:
+            self._logger.warning(f"Failed to remove scene list '{self._scene_label}': {str(e)}")
 
-    def _download_options(self, label: str, dataset):
+    def _download_options(self, dataset: str) -> List[Dict]:
         """
-        Method retrieves download options (mainly URLs and filesizes) from M2M API
-
-        :param label: string: label of the M2M API scene which we are working with
-        :param dataset: dataset for which we are requesting download options
-        :return: list of download options returned from M2M API
+        Retrieves available download options (URLs, file sizes, etc.) from the M2M API.
+        Only returns options that are available and use a supported download system.
         """
 
         api_payload = {
-            "listId": label,
+            "listId": self._scene_label,
             "datasetName": dataset,
             "includeSecondaryFileGroups": "true"
         }
 
-        response = self._send_request('download-options', api_payload)
-        download_options = json.loads(response)
+        response_content = self._send_request('download-options', api_payload)
+        download_options = json.loads(response_content)
 
+        # Filter for available downloads from specific download systems.
+        supported_systems = ['dds', 'dds_ms', 'ls_zip']
+        filtered_options = [
+            download_option for download_option in download_options.get('data', []) \
+            if download_option.get('available') and download_option.get('downloadSystem') in supported_systems
+        ]
+
+        self._logger.info(f"Found {len(filtered_options)} valid download options.")
+
+        return filtered_options
+
+    def _unique_urls(self, available_urls: List[Dict]) -> List[Dict]:
         """
-        # Fixed below
-        filtered_download_options = [do for do in download_options['data'] if do['downloadSystem'] == 'dds']
-        """
-
-        filtered_download_options = []
-        for download_option in download_options['data']:
-            if download_option['downloadSystem'] == 'dds' and download_option['available'] == True:
-                filtered_download_options.append(download_option)
-            elif download_option['downloadSystem'] == 'dds_ms' and download_option['available'] == True:
-                filtered_download_options.append(download_option)
-            elif download_option['downloadSystem'] == 'ls_zip' and download_option['available'] == True:
-                filtered_download_options.append(download_option)
-
-        return filtered_download_options
-
-    def _unique_urls(self, available_urls):
-        """
-        Uniques list of URLs available for downloading. Every URL in list will be in resulting list only once
-        :param available_urls: list of URLs available for downloading. But one URL can be in this list multiple times
-        :return: list of unique available (downloadable) URLs
+        Removes duplicate URLs from a list of download dictionaries.
         """
 
-        unique_urls = list({url_dict['url']: url_dict for url_dict in available_urls}.values())
-        return unique_urls
+        return list({url_dict['url']: url_dict for url_dict in available_urls}.values())
 
-    def _download_request(self, download_options):
+    def _download_request(self, download_options: List[Dict]) -> List[Dict]:
         """
-        Method calls download-request M2M API endpoint (https://m2m.cr.usgs.gov/api/docs/reference/#download-request)
-        Method is primarily obtaining URLs that are available for download.
-
-        :param download_options: list of download options retreived by self._download_options()
-        :return: list of unique URLs that are available for downloading
+        Initiates a download request for a list of download options and waits until
+        all corresponding URLs are available.
         """
 
-        # Resulting list of available URLs
         available_urls = []
+        options_to_process = download_options[:]
 
-        # Repeat until break... Well until we won't append any URLs into preparing_urls list. That means that all
-        # available URLs ale appended into available_urls list
-        while True:
-            # Some of the URLs may not be ready for downloading yet. Let's store theme somewhere else
+        while options_to_process:
             preparing_urls = []
 
-            # for every download-option...
-            for download_option in download_options:
+            for option in options_to_process:
                 api_payload = {
                     "downloads": [
                         {
-                            "entityId": download_option['entityId'],
-                            "productId": download_option['id']
+                            "entityId": option['entityId'],
+                            "productId": option['id']
                         }
                     ]
                 }
 
-                response = self._send_request('download-request', api_payload)
-                download_request = json.loads(response)
+                try:
+                    response_content = self._send_request('download-request', api_payload)
+                    download_request = json.loads(response_content)
+                    available_urls.extend([
+                        {"entityId": option['entityId'], "productId": option['id'], "url": d['url']}
+                        for d in download_request['data'].get('availableDownloads', [])
+                    ])
+                    preparing_urls.extend(download_request['data'].get('preparingDownloads', []))
 
-                # ...append all of its already available URLs into list of available URLs...
-                for available_download in download_request['data']['availableDownloads']:
-                    available_urls.append(
-                        {
-                            "entityId": download_option['entityId'],
-                            "productId": download_option['id'],
-                            "url": available_download['url']
-                        }
-                    )
+                except Exception as e:
+                    self._logger.warning(f"Failed to request download for entity {option['entityId']}: {e}")
 
-                # ...and URLs that are not available for downloading yet into list of preparing URLs...
-                for preparing_download in download_request['data']['preparingDownloads']:
-                    preparing_urls.append(
-                        {
-                            "entityId": download_option['entityId'],
-                            "productId": download_option['id'],
-                            "url": preparing_download['url']
-                        }
-                    )
-
-            # If we did not append any URLs into preparing_urls list that means we have all possible URLs
-            # in available_urls array, and thus we can break while cycle
             if not preparing_urls:
                 break
 
+            options_to_process = [
+                option for option in options_to_process if
+                any(prepared_url['entityId'] == option['entityId'] for prepared_url in preparing_urls)
+            ]
+
+            self._logger.info(f"Waiting for {len(preparing_urls)} downloads to be ready...")
             time.sleep(5)
 
-        # Some URLs may have been added multiple times. We need to unique the array
-        available_urls = self._unique_urls(available_urls)
-
-        # If we have fewer available_urls than download_options then there is some download options for which there
-        # should be URL available without any. Which is odd.
-        if len(available_urls) < len(download_options):
+        # Remove duplicates
+        unique_urls = self._unique_urls(available_urls)
+        if len(unique_urls) < len(download_options):
             raise USGSM2MDownloadRequestReturnedFewerURLs(
-                entity_ids_count=len(download_options), urls_count=len(available_urls)
+                entity_ids_count=len(download_options), urls_count=len(unique_urls)
             )
 
-        return available_urls
+        return unique_urls
 
-    def _get_list_of_files(self, download_options, entity_display_ids, time_start, time_end, dataset):
+    def _get_list_of_files(
+            self,
+            download_options: List[Dict],
+            entity_display_ids: Dict[str, str],
+            time_start: datetime,
+            time_end: datetime, dataset: str
+    ) -> List[Dict]:
         """
-        Method retrieves list of downloadable URLs from self._download_request and appends displayId, dataset, and
-        date range to those.
-
-        :param download_options: download_options for demanded scenes (obtained by self._download_options)
-        :param entity_display_ids: dictionary of entityIds and corresponding displayId
-        :param time_start:
-        :param time_end:
-        :param dataset: demanded dataset
-        :return: updated list of downloadable URLs
+        Retrieves downloadable URLs and enriches them with metadata.
         """
 
         downloadable_urls = self._download_request(download_options)
 
         for downloadable_url in downloadable_urls:
-            downloadable_url.update(
-                {
-                    "displayId": entity_display_ids[downloadable_url['entityId']],
-                    "dataset": dataset,
-                    "start": time_start,
-                    "end": time_end
-                }
-            )
+            downloadable_url.update({
+                "displayId": entity_display_ids.get(downloadable_url['entityId']),
+                "dataset": dataset,
+                "start": time_start,
+                "end": time_end
+            })
 
         return downloadable_urls
 
-    def download_file(self, url: str, output_path: str, chunk_size: int = 1024 * 1024, max_retries: int = 5):
+    def download_file(
+            self,
+            url: str,
+            output_dir: Path | str,
+            chunk_size: int = 1024 * 1024,
+            max_retries: int = 5,
+            timeout: int = 60
+    ) -> Tuple[Path, bool]:
         """
-        Downloads a file from given URL to the specified output_path.
-
-        :param url: download URL obtained from get_downloadable_files
-        :param output_path: path where file will be saved
-        :param chunk_size: how many bytes to read at once (default 1 MB)
-        :param max_retries: how many times to retry on failure (default 5, will always try at least once)
-        :return: output_path
+        Downloads a file from a given URL into the specified output directory.
+        The filename is determined from the server's Content-Disposition header or, if missing, from the URL itself.
         """
 
-        if max_retries <= 0:
-            max_retries = 1
+        proper_filename = True
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         retry = 0
         while retry <= max_retries:
             try:
-                self._logger.info(f"Downloading {url} -> {output_path}")
-                with requests.get(url, stream=True, timeout=60) as r:
-                    r.raise_for_status()
-                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                    with open(output_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=chunk_size):
-                            if chunk:
-                                f.write(chunk)
-                return output_path
-            except Exception as e:
+                if output_dir.is_absolute():
+                    target_str = str(output_dir)
+                else:
+                    target_str = f"./{output_dir}"
+                print(f"Downloading {url} into {target_str}")
+
+                with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as response:
+                    response.raise_for_status()
+
+                    cd = response.headers.get("content-disposition")
+                    filename = None
+                    if cd:
+                        match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, re.IGNORECASE)
+                        if match:
+                            filename = match.group(1)
+
+                    if not filename:
+                        proper_filename = False
+                        path = Path(urlparse(url).path)
+                        if path.name:
+                            filename = path.name
+
+                    if not filename:
+                        proper_filename = False
+                        filename = "downloaded_file"
+
+                    output_path = output_dir / filename
+
+                    with output_path.open("wb") as f:
+                        for chunk in response.iter_bytes(chunk_size=chunk_size):
+                            f.write(chunk)
+
+                self._logger.info(f"Downloaded {url} into {output_path}")
+
+                return output_path, proper_filename
+
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP error during download: {e.response.status_code}")
+                raise
+
+            except (httpx.RequestError, IOError) as e:
                 retry += 1
-                self._logger.warning(f"Download failed ({retry}/{max_retries}): {e}")
+                print(f"Download failed ({retry}/{max_retries}): {e}")
+
                 if retry > max_retries:
-                    raise
+                    raise USGSM2MDownloadRequestFailed(url=url)
+
                 time.sleep((1 + random.random()) * 5)
 
+        raise USGSM2MDownloadRequestFailed(url=url)
+
     def get_downloadable_files(
-            self,
-            dataset, geojson, time_start, time_end,
-            label=env.get_landsat()['m2m_scene_label']
-    ):
+            self, dataset: str, geojson: dict, time_start: datetime, time_end: datetime
+    ) -> List[Dict]:
         """
-        For specified dataset, geojson, daterange and scene label this method returns a list of downloadable files,
-        and corresponding URLs
-
-        :param dataset: demanded dataset
-        :param geojson: polygon dict
-        :param time_start:
-        :param time_end:
-        :param label: scene label
-        :return: list[dict{}] of downloadable files
-
-        Example returned structure:
-        [
-          {
-            'entityId':'LC91940242024076LGN00',
-            'productId':'632210d4770592cf',
-            'url':'https://dds.cr.usgs.gov/download/eyJpZCI6NjA3Mzg1OTQyLCJjb250YWN0SWQiOjI2ODY2MzY0fQ==',
-            'displayId':'LC09_L2SP_194024_20240316_20240317_02_T2',
-            'dataset':'landsat_ot_c2_l2',
-            'start':datetime.date(2024,3,16),
-            'end':datetime.date(2024,3,16),
-            'geojson':{
-              'type':'Polygon',
-              'coordinates':[
-                [
-                  [
-                    12.09,
-                    48.55
-                  ],
-                  [
-                    18.87,
-                    48.55
-                  ],
-                  [
-                    18.87,
-                    51.06
-                  ],
-                  [
-                    12.09,
-                    51.06
-                  ],
-                  [
-                    12.09,
-                    48.55
-                  ]
-                ]
-              ]
-            }
-          }
-        ]
+        Main public method to get a list of downloadable files and their metadata.
         """
 
-        self.scene_list_remove(label)
-
+        self.scene_list_remove()
         scenes = self._scene_search(dataset, geojson, time_start, time_end)
+
+        if not scenes.get('results'):
+            self._logger.info("No scenes found for the specified criteria.")
+            return []
 
         entity_display_ids = {result['entityId']: result['displayId'] for result in scenes['results']}
 
         self._logger.info(
-            f"Total hits: {scenes['totalHits']}, records returned: {scenes['recordsReturned']}, " +
-            f"returned IDs: {entity_display_ids}"
+            f"Total hits: {scenes.get('totalHits', 0)}, records returned: {scenes.get('recordsReturned', 0)}"
         )
 
-        if not entity_display_ids:
-            return []
+        self._scene_list_add(dataset, list(entity_display_ids.keys()))
 
-        self._scene_list_add(label, dataset, list(entity_display_ids.keys()))
-
-        download_options = self._download_options(label, dataset)
+        download_options = self._download_options(dataset)
 
         downloadable_files = self._get_list_of_files(
             download_options, entity_display_ids, time_start, time_end, dataset
@@ -386,71 +352,60 @@ class USGSM2MConnector:
 
         return downloadable_files
 
-    def _send_request(self, endpoint, payload_dict=None, max_retries=5):
+    def _send_request(self, endpoint: str, payload_dict: dict = None, max_retries: int = 5, timeout=60) -> bytes | None:
         """
-        Method sends HTTP request to specified URL endpoint
+        Sends an HTTP POST request to the specified M2M API endpoint using httpx.
+        Handles authentication, retries, and error handling.
+        """
 
-        :param endpoint: URL endpoint
-        :param payload_dict: dict that will be converted to request JSON
-        :param max_retries: number of retries, default 5
-        :return: request.response.content
-        """
         if payload_dict is None:
             payload_dict = {}
 
-        endpoint_full_url = str(os.path.join(self._api_url, endpoint))
         payload_json = json.dumps(payload_dict)
+
+        endpoint_full_url = os.path.join(self._api_url, endpoint)
 
         headers = {}
 
-        if (endpoint != 'login') and (endpoint != 'login-token'):
-            if self._api_token_valid_until < datetime.now(timezone.utc):
-                self._login_token()
-
+        # Refresh token if expired
+        if endpoint not in ['login', 'login-token']:
+            self._refresh_token_if_expired()
             headers['X-Auth-Token'] = self._api_token
 
-        data = self._retry_request(endpoint_full_url, payload_json, max_retries, headers)
+        with httpx.Client(timeout=timeout) as client:
+            return self._retry_request(client, endpoint_full_url, payload_json, max_retries, headers)
 
-        if data.status_code != 200:
-            raise USGSM2MRequestNotOK(status_code=data.status_code)
-
-        return data.content
-
-    def _retry_request(self, endpoint, payload, max_retries=5, headers=None, timeout=30, sleep=5):
+    def _retry_request(
+            self, client: httpx.Client, endpoint: str, payload: str, max_retries: int, headers: dict
+    ) -> bytes | None:
         """
-        Method sends request to specified endpoint until number of max_retries is reached
-        For max_retries=5 the request is sent 6 times, since first (or the "zeroth") is understood as proper request.
-
-        :param endpoint: URL of USGS M2M API endpoint
-        :param payload: JSON string of a API payload
-        :param max_retries: default 5 retries
-        :param headers: dict of headers sent to M2M API endpoint
-        :param timeout: default 10 seconds
-        :param sleep: wait seconds between retries, default 5 seconds
-        :return: request response, bytestring of response, can be parsed to JSON
-        :raise USGSM2MRequestTimeout: when limit of max_retries is reached
+        Retries a POST request with a delay on failure.
         """
-
-        if headers is None:
-            headers = {}
-
         retry = 0
-        while max_retries > retry:
-            if 'login' in endpoint:
-                payload_to_log = '=== Contains secret, not logged! ==='
-            else:
-                payload_to_log = payload
 
-            self._logger.info(f"Sending request to URL {endpoint}. Retry: {retry}. Payload: {payload_to_log}")
+        while retry <= max_retries:
             try:
-                response = requests.post(endpoint, payload, headers=headers, timeout=timeout)
-                return response
+                payload_to_log = '=== Contains secret, not logged! ===' if 'login' in endpoint else payload
+                self._logger.info(
+                    f"Sending request to {endpoint}. Attempt: {retry + 1}/{max_retries + 1}. Payload: {payload_to_log}"
+                )
 
-            except requests.exceptions.Timeout:
+                response = client.post(endpoint, content=payload, headers=headers)
+                response.raise_for_status()
+
+                return response.content
+
+            except httpx.RequestError as e:
                 retry += 1
-                self._logger.warning(f"Connection timeout. Retry number {retry} of {max_retries}.")
+                self._logger.warning(f"Request failed: {e}. Retrying...")
 
-                sleep = (1 + random.random()) * sleep
-                time.sleep(sleep)
+                if retry > max_retries:
+                    raise USGSM2MRequestTimeout(retry=retry, max_retries=max_retries)
 
-        raise USGSM2MRequestTimeout(retry=retry, max_retries=max_retries)
+                time.sleep((1 + random.random()) * 5)
+
+            except httpx.HTTPStatusError as e:
+                self._logger.error(f"Received HTTP status error {e.response.status_code}: {e.response.text}")
+                raise USGSM2MRequestNotOK(status_code=e.response.status_code, response_text=e.response.text)
+
+        return None
