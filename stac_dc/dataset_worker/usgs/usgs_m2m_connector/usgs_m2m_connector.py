@@ -18,6 +18,9 @@ from .exceptions.usgs_m2m_connector import *
 class USGSM2MConnector:
     """
     Client for interacting with the USGS M2M API for Landsat data.
+
+    Much of the workflow is inspired by Angel Farguell's m2m-api (GitHub: https://github.com/Fergui/m2m-api)
+    Thanks!
     """
 
     _logger: logging.Logger = None
