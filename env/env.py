@@ -9,6 +9,8 @@ from .exceptions import *
 class Env:
     _instance = None  # Singleton instance
 
+    _true_statements = ["1", "true", "yes", ]
+
     _app__project_root: Path = None
 
     _era5: dict = {}
@@ -73,7 +75,11 @@ class Env:
             data_format.strip()
             for data_format in os.getenv("ERA5__DATA_FORMATS", default="grib").split(",") if data_format.strip()
         ]
+
         self._era5['redownload_threshold'] = int(os.getenv("ERA5__REDOWNLOAD_THRESHOLD", "13"))
+        self._era5['recatalogize_only'] = (
+                os.getenv("ERA5__RECATALOGIZE_ONLY", default="False").lower() in self._true_statements
+        )
 
     def get_era5(self):
         if not self._era5:
@@ -106,6 +112,10 @@ class Env:
         self._landsat['m2m_username'] = os.getenv("LANDSAT__M2M_USERNAME", default=None)
         self._landsat['m2m_token'] = os.getenv("LANDSAT__M2M_TOKEN", default=None)
         self._landsat['m2m_scene_label'] = os.getenv("LANDSAT__M2M_SCENE_LABEL", default=None)
+
+        self._landsat['recatalogize_only'] = (
+                os.getenv("LANDSAT__RECATALOGIZE_ONLY", default="False").lower() in self._true_statements
+        )
 
     def get_landsat(self):
         if not self._landsat:

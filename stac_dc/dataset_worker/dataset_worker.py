@@ -161,9 +161,10 @@ class DatasetWorker(ABC):
         for start, end, force in intervals:
             for d in daterange(start, end):
                 if d <= today:
-                    days_map[d] = days_map.get(d, False) or force
+                    days_map[d] = False if env.get_era5()["recatalogize_only"] else (days_map.get(d, False) or force)
 
-        return sorted(days_map.items())
+        days_list: List[Tuple[date, bool]] = sorted(days_map.items())
+        return days_list
 
     def _set_last_downloaded_day(self, last_downloaded_day: date):
         """
