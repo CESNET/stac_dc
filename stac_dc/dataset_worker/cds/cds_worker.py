@@ -74,24 +74,28 @@ class CDSWorker(DatasetWorker, ABC):
             redownload_threshold=self._get_redownload_threshold()
         )
 
-        for day_to_download in days_to_download:
-            day = day_to_download[0]
-            force_redownload = day_to_download[1]
+        try:
+            for day_to_download in days_to_download:
+                day = day_to_download[0]
+                force_redownload = day_to_download[1]
 
-            self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
+                self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
 
-            assets = self._process_day_assets(day, force_redownload)
+                assets = self._process_day_assets(day, force_redownload)
 
-            if assets:
-                self._register_catalogue_item(day, assets)
-            else:
-                self._logger.info(f"[{day:%Y-%m-%d}] Skipping catalogue item (no assets)")
+                if assets:
+                    self._register_catalogue_item(day, assets)
+                else:
+                    self._logger.info(f"[{day:%Y-%m-%d}] Skipping catalogue item (no assets)")
 
-            self._set_last_downloaded_day(day)
+                self._set_last_downloaded_day(day)
 
-            self._logger.info(f"[{day:%Y-%m-%d}] Finished processing")
+                self._logger.info(f"[{day:%Y-%m-%d}] Finished processing")
 
-            self.reset_run_attempt()
+                self.reset_run_attempt()
+
+        except CDSWorkerDataNotAvailableYet:
+            self._logger.info("All downloaded, no more data available.")
 
     # ---------------------------------------------------------------------
     # Helpers for run()
@@ -117,6 +121,7 @@ class CDSWorker(DatasetWorker, ABC):
                         tmp_file = self._download_from_api(day, product_type, data_format)
                     except CDSWorkerDataNotAvailableYet as e:
                         self._logger.info(f"[{day:%Y-%m-%d}] {e.message}")
+                        raise e
 
                     if not tmp_file:
                         continue
