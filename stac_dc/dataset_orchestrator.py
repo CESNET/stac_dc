@@ -86,7 +86,7 @@ class DatasetOrchestrator:
     @staticmethod
     def _get_retry_delay(attempt: int):
         retry_delays = RETRY_DELAYS
-        return retry_delays[min(attempt - 1, len(retry_delays) - 1)]
+        return retry_delays[min(attempt, len(retry_delays) - 1)]
 
     def _report_error(self, attempt, delay: int = -1, exiting: bool = False):
         if exiting:
