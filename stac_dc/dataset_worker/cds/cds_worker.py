@@ -117,6 +117,7 @@ class CDSWorker(DatasetWorker, ABC):
                         continue
 
                     tmp_file = None
+
                     try:
                         tmp_file = self._download_from_api(day, product_type, data_format)
                     except CDSWorkerDataNotAvailableYet as e:
@@ -204,8 +205,9 @@ class CDSWorker(DatasetWorker, ABC):
                 and "None of the data you have requested is available yet"
                 in http_error_content.get("traceback", "")
             ):
-                raise CDSWorkerDataNotAvailableYet(f"Requested data not available yet") from http_error
-            raise
+                raise CDSWorkerDataNotAvailableYet(f"Requested data not available yet")
+            else:
+                raise http_error
 
         return Path(downloaded_file.name)
 
