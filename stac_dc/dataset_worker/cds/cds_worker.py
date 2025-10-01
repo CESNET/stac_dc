@@ -179,6 +179,10 @@ class CDSWorker(DatasetWorker, ABC):
             "href": href,
         }
 
+    @abstractmethod
+    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
+        pass
+
     # ------------------------
     # CDS API connection
     # ------------------------
@@ -199,12 +203,7 @@ class CDSWorker(DatasetWorker, ABC):
                 downloaded_file.name,
             )
         except requests.exceptions.HTTPError as http_error:
-            http_error_content = json.loads(http_error.response.content.decode())
-            if (
-                http_error.response.status_code == 400
-                and "None of the data you have requested is available yet"
-                in http_error_content.get("traceback", "")
-            ):
+            if self._check_dataset_not_available(cds_exception=http_error):
                 raise CDSWorkerDataNotAvailableYet(f"Requested data not available yet")
             else:
                 raise http_error

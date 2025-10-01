@@ -1,4 +1,6 @@
+import json
 import logging
+import requests
 
 from stac_dc.dataset_worker.cds import ERA5Worker
 
@@ -60,3 +62,12 @@ class ReanalysisERA5PressureLevelsWorker(ERA5Worker):
                 self._aoi.get_bbox()[3],  # East
             ],
         }
+
+    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
+        exception_content = json.loads(cds_exception.response.content.decode())
+
+        return (
+                cds_exception.response.status_code == 400
+                and
+                "None of the data you have requested is available yet" in exception_content.get("detail", "")
+        )
