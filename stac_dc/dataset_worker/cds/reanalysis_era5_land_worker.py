@@ -4,7 +4,7 @@ import requests
 
 from stac_dc.dataset_worker.cds import ERA5Worker
 
-from env import env
+from env import env as env
 
 
 class ReanalysisERA5LandWorker(ERA5Worker):

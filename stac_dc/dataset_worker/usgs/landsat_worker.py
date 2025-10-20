@@ -1,10 +1,9 @@
 import logging
 
-from datetime import date
-from pathlib import Path
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from stac_dc.dataset_worker.dataset_worker import DatasetWorker
+from . import USGSWorker
 
 from .usgs_m2m_connector import USGSM2MConnector
 
@@ -14,9 +13,9 @@ from stac_dc.catalogue import STAC
 from env import env
 
 
-class LandsatWorker(DatasetWorker):
+class LandsatWorker(USGSWorker):
+
     def __init__(self, logger=logging.getLogger(env.get_app__name()), **kwargs):
-        self._m2m_api_connector = USGSM2MConnector(logger=logger)
         super().__init__(
             logger=logger,
             storage=S3(
@@ -40,17 +39,11 @@ class LandsatWorker(DatasetWorker):
         return env.get_landsat()["stac_asset_download_root"]
 
     def _get_days_to_download(self, *args: Any, **kwargs: Any) -> List[Tuple[date, bool]]:
-        self._get_last_downloaded_day(*args, **kwargs)
+        today = datetime.now(timezone.utc).date()
+        last_downloaded = self._get_last_downloaded_day() or today
+
         return []
 
-    def _set_last_downloaded_day(self, *args: Any, **kwargs: Any) -> None:
-        pass
-
-    def _get_last_downloaded_day(self, *args: Any, **kwargs: Any) -> date:
-        kwargs["path_to_last_downloaded_day"] = str(Path(self._dataset) / "last_downloaded_day.json")
-        kwargs["path_to_items_missing_stac"] = str(Path(self._dataset) / "items_missing_stac.json")
-
-        return super()._get_last_downloaded_day(*args, **kwargs)
 
     def run(self, **kwargs):
         self._logger.debug(f"{self._dataset} pipeline started")
@@ -60,7 +53,7 @@ class LandsatWorker(DatasetWorker):
         )
 
         for day, force in days_to_download:
-            self._logger.info(f"[{day}] Start {self._dataset_name} processing")
+            self._logger.info(f"[{day}] Start {self._dataset} processing")
 
             assets = self._process_day_assets(day, force)
 

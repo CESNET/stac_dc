@@ -1,37 +1,33 @@
 import os
 import logging
 
-from datetime import date, datetime
-from typing import List, Tuple
+from abc import ABC
+from datetime import date, datetime, time
+from typing import Dict, List
 
 from .usgs_m2m_connector import USGSM2MConnector
+from .. import DatasetWorker
 
 
-class USGSWorker:
-    def __init__(self, dataset: str, aoi, start: datetime, end: datetime, **kwargs):
-        self.dataset = dataset
-        self.aoi = aoi
-        self.start = start
-        self.end = end
-        self.kwargs = kwargs
+class USGSWorker(DatasetWorker, ABC):
+    def __init__(self, *args, **kwargs):
+        self._m2m_api_connector = USGSM2MConnector()
 
-        self.connector = USGSM2MConnector()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        super().__init__(**kwargs)
 
-    def _get_days_to_download(self, redownload_threshold: int) -> List[Tuple[date, bool]]:
-        pass
-        #TODO start from here!
+    def search_by_daterange(self, start: date, end: date) -> List[Dict]:
+        start_datetime = datetime.combine(start, time.min)  # 00:00:00
+        end_datetime = datetime.combine(end, time.max)  # 23:59:59.999999
 
-    def search(self):
         return self.connector.get_downloadable_files(
             dataset=self.dataset,
             geojson=self.aoi.to_geojson(),
-            time_start=self.start,
-            time_end=self.end,
+            time_start=start_datetime,
+            time_end=end_datetime,
         )
 
     def download(self, output_dir: str):
-        results = self.search()
+        results = self.search_by_daterange()
         downloaded = []
         for item in results:
             filename = f"{item['displayId']}.tar"

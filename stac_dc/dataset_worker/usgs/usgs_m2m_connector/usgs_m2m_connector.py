@@ -46,7 +46,9 @@ class USGSM2MConnector:
 
         self._logger = logger
 
-        self._login_token()
+        #self._login_token()
+        # Set token as expired so first call will force login
+        self._api_token_valid_until = datetime.now(timezone.utc)
 
     def _login_token(self):
         """
