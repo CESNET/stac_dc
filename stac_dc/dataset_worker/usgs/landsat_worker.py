@@ -1,15 +1,37 @@
 import logging
+
 from datetime import date
-from typing import Dict
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 from stac_dc.dataset_worker.dataset_worker import DatasetWorker
+
+from .usgs_m2m_connector import USGSM2MConnector
+
+from stac_dc.storage import S3
+from stac_dc.catalogue import STAC
+
 from env import env
 
 
 class LandsatWorker(DatasetWorker):
     def __init__(self, logger=logging.getLogger(env.get_app__name()), **kwargs):
-        super().__init__(dataset="landsat", logger=logger, **kwargs)
         self._m2m_api_connector = USGSM2MConnector(logger=logger)
+        super().__init__(
+            logger=logger,
+            storage=S3(
+                s3_host=env.get_landsat()["s3_host"],
+                access_key=env.get_landsat()["s3_access_key"],
+                secret_key=env.get_landsat()["s3_secret_key"],
+                host_bucket=env.get_landsat()["s3_host_bucket"],
+            ),
+            catalogue=STAC(
+                username=env.get_landsat()["stac_username"],
+                password=env.get_landsat()["stac_password"],
+                stac_host=env.get_landsat()["stac_host"],
+            ),
+            **kwargs
+        )
 
     def get_id(self, day: date) -> str:
         raise NotImplementedError()
@@ -17,8 +39,21 @@ class LandsatWorker(DatasetWorker):
     def get_catalogue_download_host(self) -> str:
         return env.get_landsat()["stac_asset_download_root"]
 
+    def _get_days_to_download(self, *args: Any, **kwargs: Any) -> List[Tuple[date, bool]]:
+        self._get_last_downloaded_day(*args, **kwargs)
+        return []
+
+    def _set_last_downloaded_day(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def _get_last_downloaded_day(self, *args: Any, **kwargs: Any) -> date:
+        kwargs["path_to_last_downloaded_day"] = str(Path(self._dataset) / "last_downloaded_day.json")
+        kwargs["path_to_items_missing_stac"] = str(Path(self._dataset) / "items_missing_stac.json")
+
+        return super()._get_last_downloaded_day(*args, **kwargs)
+
     def run(self, **kwargs):
-        self._logger.debug(f"{self._dataset_name} pipeline started")
+        self._logger.debug(f"{self._dataset} pipeline started")
 
         days_to_download = self._get_days_to_download(
             redownload_threshold=env.get_landsat()["redownload_threshold"]

@@ -61,7 +61,7 @@ class ERA5Worker(CDSWorker):
 
     def _get_days_to_download(
             self,
-            redownload_threshold: int,  # weeks
+            redownload_threshold: int,  # days
             recent_days: int = 10,  # days
             threshold_window: int = 2  # days
     ) -> List[Tuple[date, bool]]:
@@ -75,7 +75,7 @@ class ERA5Worker(CDSWorker):
 
         # intervals
         gap_days = max(0, (today - last_downloaded).days)
-        redownload_anchor = today - timedelta(weeks=redownload_threshold)
+        redownload_anchor = today - timedelta(days=redownload_threshold)
 
         intervals = [
             # redownload: Force download == True

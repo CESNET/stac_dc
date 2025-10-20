@@ -1,7 +1,11 @@
 import os
 import logging
-from datetime import datetime
+
+from datetime import date, datetime
+from typing import List, Tuple
+
 from .usgs_m2m_connector import USGSM2MConnector
+
 
 class USGSWorker:
     def __init__(self, dataset: str, aoi, start: datetime, end: datetime, **kwargs):
@@ -13,6 +17,10 @@ class USGSWorker:
 
         self.connector = USGSM2MConnector()
         self.logger = logging.getLogger(self.__class__.__name__)
+
+    def _get_days_to_download(self, redownload_threshold: int) -> List[Tuple[date, bool]]:
+        pass
+        #TODO start from here!
 
     def search(self):
         return self.connector.get_downloadable_files(
