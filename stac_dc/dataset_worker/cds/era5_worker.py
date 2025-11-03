@@ -21,6 +21,7 @@ class ERA5Worker(CDSWorker):
             logger=logging.getLogger(env.get_app__name()),
             **kwargs,
     ):
+        self._stac_template_path = None
         self._available_hours = [
             "00:00", "01:00", "02:00",
             "03:00", "04:00", "05:00",
@@ -106,3 +107,26 @@ class ERA5Worker(CDSWorker):
 
         days_list: List[Tuple[date, bool]] = sorted(days_map.items())
         return days_list
+
+    def _prepare_stac_feature_json(self, day: date, assets: list[dict]) -> str:
+        with open(self._stac_template_path) as f:
+            feature_dict = json.load(f)
+
+        feature = feature_dict['features'][0]
+        feature['id'] = self.get_id(day)
+        feature['bbox'] = self._aoi.get_bbox()
+        feature['geometry']['coordinates'] = self._aoi.get_polygon()
+        feature['properties'].update({
+            'start_datetime': f"{day}T00:00:00Z",
+            'end_datetime': f"{day}T23:59:59Z",
+            'datetime': f"{day}T00:00:00Z"
+        })
+
+        for asset in assets:
+            url = f"{self.get_catalogue_download_host()}/{asset['href']}"
+            key = f"{asset['product_type'].replace('_', '-')}-{asset['data_format']}"
+            feature['assets'][key]['href'] = url
+
+        feature['assets'] = {k: v for k, v in feature['assets'].items() if v.get('href')}
+
+        return json.dumps(feature_dict, indent=2)

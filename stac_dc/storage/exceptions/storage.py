@@ -13,3 +13,10 @@ class StorageCannotAcquireLock(StorageError):
             message = message + f" Lock file: {file}"
 
         super().__init__(message)
+
+class FileNotFoundError(StorageError):
+    def __init__(self, message="File not found!", file: Path | str = None):
+        if file is not None:
+            message = f"File {file} not found!"
+
+        super().__init__(message)

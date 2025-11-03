@@ -11,10 +11,10 @@ from typing import Any, List, Tuple
 
 import json
 import logging
-import tempfile
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
+from tempfile import NamedTemporaryFile
 
 from .exceptions import *
 
@@ -70,10 +70,6 @@ class DatasetWorker(ABC):
         return self._aoi
 
     @abstractmethod
-    def get_id(self, *args: Any, **kwargs: Any) -> str:
-        pass
-
-    @abstractmethod
     def get_catalogue_download_host(self):
         pass
 
@@ -100,10 +96,15 @@ class DatasetWorker(ABC):
         remote_file_path = f"{self._dataset}/{self._last_downloaded_day_filename}"
 
         with self._storage.locked(remote_file_path):
-            with tempfile.NamedTemporaryFile(mode='w+b', suffix='.json', delete=False) as tmp_file:
-                self._storage.download(remote_file_path=remote_file_path, local_file_path=tmp_file.name)
-                tmp_file.seek(0)
-                data = json.load(tmp_file)
+            try:
+                with NamedTemporaryFile(mode='w+b', suffix='.json', delete=False) as tmp_file:
+                    self._storage.download(remote_file_path=remote_file_path, local_file_path=tmp_file.name)
+                    tmp_file.seek(0)
+                    data = json.load(tmp_file)
+
+            finally:
+                tmp_file.close()
+                Path(tmp_file.name).unlink(missing_ok=True)
 
         last_downloaded_day = datetime.strptime(
             data[self._aoi.get_name()], "%Y-%m-%d"
@@ -121,8 +122,9 @@ class DatasetWorker(ABC):
         remote_file_path = f"{self._dataset}/{self._last_downloaded_day_filename}"
 
         with self._storage.locked(remote_file_path):
-            tmp_file = tempfile.NamedTemporaryFile(mode="w+b", suffix=".json", delete=False)
             try:
+                tmp_file = NamedTemporaryFile(mode="w+b", suffix=".json", delete=False)
+
                 try:
                     self._storage.download(remote_file_path=remote_file_path, local_file_path=tmp_file.name)
                     with open(tmp_file.name, "r", encoding="utf-8") as f:
@@ -145,3 +147,9 @@ class DatasetWorker(ABC):
             f"Last downloaded day for dataset {self._dataset} and AOI {self._aoi.get_name()} "
             f"updated to {last_downloaded_day.strftime('%Y-%m-%d')}"
         )
+
+    def _save_to_storage(self, file_to_save: Path, remote_path: str) -> None:
+        """Upload file into remote storage."""
+        with self._storage.locked(remote_path):
+            self._storage.upload(remote_file_path=remote_path, local_file_path=file_to_save)
+            self._logger.info(f"Saved {file_to_save.name} to storage as {remote_path}")

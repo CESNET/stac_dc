@@ -16,18 +16,5 @@ class Catalogue(ABC):
         self._logger = logger
 
     @abstractmethod
-    def register_item(
-            self,
-            worker: "DatasetWorker", dataset: str, day: date, aoi: "AOI", assets: list[dict]
-    ) -> tuple[str, str, str]:
-        """
-        Method registers item into catalogue
-
-        :param worker:
-        :param dataset:
-        :param day:
-        :param aoi:
-        :param assets:
-        :return: Returns tuple(str: catalogue_id, str: catalogue_item_contents, str: catalogue_item_contents_format)
-        """
+    def register_item(self, json_data: str | dict, dataset: str) -> str:
         pass

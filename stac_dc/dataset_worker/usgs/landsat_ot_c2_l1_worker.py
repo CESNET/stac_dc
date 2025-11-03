@@ -11,6 +11,7 @@ class LandsatOTC2L1Worker(LandsatWorker):
             **kwargs
     ):
         super().__init__(
+            dataset="landsat_ot_c2_l1",
             logger=logger,
             **kwargs
         )

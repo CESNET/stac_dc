@@ -58,3 +58,8 @@ class USGSM2MDownloadRequestFailed(USGSM2MConnectorException):
             message += f" Failed URL: {url}"
 
         super().__init__(message)
+
+
+class USGSM2MDatasetNotSpecified(USGSM2MConnectorException):
+    def __init__(self, message="USGS M2M Connector Dataset Not Specified!"):
+        super().__init__(message)

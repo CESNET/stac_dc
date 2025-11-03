@@ -4,7 +4,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import cdsapi
 import requests
@@ -21,10 +21,10 @@ class CDSWorker(DatasetWorker, ABC):
     _formats: list[str]
 
     def __init__(
-        self,
-        formats: Optional[list[str]] = None,
-        logger: logging.Logger = logging.getLogger(env.get_app__name()),
-        **kwargs,
+            self,
+            formats: Optional[list[str]] = None,
+            logger: logging.Logger = logging.getLogger(env.get_app__name()),
+            **kwargs,
     ):
         self._formats = formats or []
         super().__init__(logger=logger, **kwargs)
@@ -69,18 +69,17 @@ class CDSWorker(DatasetWorker, ABC):
         """Main pipeline: download missing assets and register them into catalogue."""
         self._logger.debug("CDS pipeline started")
 
-        days_to_download = self._get_days_to_download(
+        days_to_download: List[Tuple[date, bool]] = self._get_days_to_download(
             redownload_threshold=self._get_redownload_threshold()
         )
 
         try:
             for day_to_download in days_to_download:
-                day = day_to_download[0]
-                force_redownload = day_to_download[1]
+                day, force_redownload = day_to_download
 
                 self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
 
-                assets = self._process_day_assets(day, force_redownload)
+                assets = self._process_day(day, force_redownload)
 
                 if assets:
                     self._register_catalogue_item(day, assets)
@@ -100,7 +99,7 @@ class CDSWorker(DatasetWorker, ABC):
     # Helpers for run()
     # ---------------------------------------------------------------------
 
-    def _process_day_assets(self, day: date, force_redownload: bool) -> list[dict[str, str]]:
+    def _process_day(self, day: date, force_redownload: bool) -> list[dict[str, str]]:
         """Download all required assets for one day and return their metadata."""
         assets: list[dict[str, str]] = []
 
@@ -142,33 +141,34 @@ class CDSWorker(DatasetWorker, ABC):
 
         return assets
 
+    @abstractmethod
+    def _prepare_stac_feature_json(self, day: date, assets: list[dict]) -> str:
+        pass
+
     def _register_catalogue_item(self, day: date, assets: list[dict[str, str]]) -> None:
-        _, catalogue_item, catalogue_item_format = self._catalogue.register_item(
-            worker=self,
-            dataset=self._dataset,
-            day=day,
-            aoi=self._aoi,
-            assets=assets,
-        )
-        self._logger.info(f"[{day:%Y-%m-%d}] Registered catalogue item with {len(assets)} assets")
+        feature_json = self._prepare_stac_feature_json(day, assets)
 
         tmp_file_path = None
         try:
             with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=f".{catalogue_item_format}", encoding="utf-8", delete=False
+                    mode="w", suffix=".json", encoding="utf-8", delete=False
             ) as tmp_file:
-                tmp_file.write(catalogue_item)
+                tmp_file.write(feature_json)
                 tmp_file_path = Path(tmp_file.name)
 
-            self._save_to_storage(
-                file_to_save=tmp_file_path,
-                remote_path=f"{self._dataset}/{self._get_file_parent_dir(day)}.{catalogue_item_format}",
-            )
 
+            remote_path = f"{self._dataset}/{self._get_file_parent_dir(day)}.json"
+            self._save_to_storage(file_to_save=tmp_file_path, remote_path=remote_path)
+
+            feature_id = self._catalogue.register_item(dataset=self._dataset, json_data=feature_json)
+            self._logger.info(f"[{day:%Y-%m-%d}] Registered STAC item ({feature_id}) and uploaded JSON to storage.")
+
+        except Exception as e:
+            self._logger.error(f"[{day:%Y-%m-%d}] Failed to register STAC item: {e}", exc_info=True)
+            raise
         finally:
             if tmp_file_path and tmp_file_path.exists():
                 tmp_file_path.unlink(missing_ok=True)
-
 
     @staticmethod
     def _make_asset(product_type: str, data_format: str, href: str) -> dict[str, str]:
@@ -217,8 +217,3 @@ class CDSWorker(DatasetWorker, ABC):
         )
         self._logger.info(f"[{day:%Y-%m-%d}] Downloaded {product_type}.{data_format} into {file_path.name}")
         return file_path
-
-    def _save_to_storage(self, file_to_save: Path, remote_path: str) -> None:
-        """Upload file into remote storage."""
-        self._storage.upload(remote_file_path=remote_path, local_file_path=file_to_save)
-        self._logger.info(f"Saved {file_to_save.name} to storage as {remote_path}")
