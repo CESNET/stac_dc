@@ -154,10 +154,18 @@ class LandsatWorker(USGSWorker):
 
             self._process_day(day, force_redownload)
 
+            self._set_last_downloaded_day(day)
+
+            self._logger.info(f"[{day:%Y-%m-%d}] Finished processing")
+
+            self.reset_run_attempt()
+
         for item_missing_usgs_stac in items_missing_usgs_stac:
             self._logger.info(f"[{item_missing_usgs_stac}] Started processing]")
 
             self._process_item(item_missing_usgs_stac)
+
+        self._logger.info("All downloaded, no more data available.")
 
     def _process_landsat_tar(self, landsat_tar_path: Path):
         landsat_processor = LandsatProcessor(
