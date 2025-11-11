@@ -27,7 +27,7 @@ class USGSM2MConnector:
     _api_url: str = None
     _username: str = None
     _scene_label: str = None
-    _token: str = None
+    _login_token: str = None
     _api_token: str | None = None
     _api_token_valid_until: datetime = datetime.now(timezone.utc)
 
@@ -36,7 +36,7 @@ class USGSM2MConnector:
             dataset: str = None,
             api_url: str = env.get_landsat()['m2m_api_url'],
             username: str = env.get_landsat()['m2m_username'],
-            token: str = env.get_landsat()['m2m_token'],
+            login_token: str = env.get_landsat()['m2m_token'],
             scene_label: str = env.get_landsat()['m2m_scene_label'],
             logger: logging.Logger = logging.getLogger(env.get_app__name()),
     ):
@@ -47,7 +47,7 @@ class USGSM2MConnector:
 
         self._api_url = api_url
         self._username = username
-        self._token = token
+        self._login_token = login_token
         self._scene_label = f"{scene_label}__{self._dataset}"
 
         self._logger = logger
@@ -56,12 +56,12 @@ class USGSM2MConnector:
         # Set token as expired so first call will force login
         self._api_token_valid_until = datetime.now(timezone.utc)
 
-    def _login_token(self):
+    def _login_using_token(self):
         """
         Obtains the M2M API access token using the user's username and login token.
         """
 
-        if not self._username or not self._token:
+        if not self._username or not self._login_token:
             raise USGSM2MCredentialsNotProvided()
 
         self._api_token = None
@@ -71,7 +71,7 @@ class USGSM2MConnector:
 
         api_payload = {
             "username": self._username,
-            "token": self._token
+            "token": self._login_token
         }
 
         max_attempts = 5
@@ -117,13 +117,17 @@ class USGSM2MConnector:
             response_text=f"Exceeded retry limit ({max_attempts}) after rate limiting or server errors"
         )
 
-    def _refresh_token_if_expired(self):
+    def _refresh_token_if_expired_or_missin(self):
         """
         Refreshes the API token if expired
         """
 
-        if self._api_token_valid_until < datetime.now(timezone.utc):
-            self._login_token()
+        if (
+                (self._api_token_valid_until < datetime.now(timezone.utc))
+                or
+                (self._api_token is None)
+        ):
+            self._login_using_token()
 
     def _scene_search(
             self,
@@ -440,7 +444,7 @@ class USGSM2MConnector:
 
         # Refresh token if expired
         if endpoint not in ['login', 'login-token']:
-            self._refresh_token_if_expired()
+            self._refresh_token_if_expired_or_missin()
             headers['X-Auth-Token'] = self._api_token
 
         with httpx.Client(timeout=timeout) as client:
