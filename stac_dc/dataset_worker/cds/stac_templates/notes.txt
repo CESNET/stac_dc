@@ -1,15 +1,8 @@
 Get auth token:
 curl -u [stac_username]:[stac_password] -X GET "https://stac.cesnet.cz/auth"
 
-[collection]reanalysis-era5-pressure-levels.json
-    Ready for upload to stac.cesnet.cz
-    Onetime upload only
-    curl -X POST "https://stac.cesnet.cz"/collections \
-        -H 'Content-Type: application/json' \
-        -H 'Accept: application/json' \
-        -H 'Authorization: Bearer auth_token_string' \
-        -d @\[collection\]reanalysis-era5-pressure-levels.json
-
+Collection creation:
+--------------------
 [collection]reanalysis-era5-single-levels.json
     Ready for upload to stac.cesnet.cz
     Onetime upload only
@@ -19,6 +12,8 @@ curl -u [stac_username]:[stac_password] -X GET "https://stac.cesnet.cz/auth"
         -H 'Authorization: Bearer auth_token_string' \
         -d @\[collection\]reanalysis-era5-single-levels.json
 
+Feature creation: (collection must be created)
+----------------------------------------------
 [feature]reanalysis-era5-single-levels.json
     JSON template for feature.
     Items to be filled:
@@ -36,21 +31,3 @@ curl -u [stac_username]:[stac_password] -X GET "https://stac.cesnet.cz/auth"
         -H 'Accept: application/json' \
         -H 'Authorization: Bearer auth_token_string' \
         -d @\[feature\]reanalysis-era5-single-levels.json
-
-[feature]reanalysis-era5-pressure-levels.json
-    JSON template for feature.
-    Items to be filled:
-        features:[0]:assets:ensemble-mean:href:"url for download"
-        features:[0]:assets:ensemble-members:href:"url for download"
-        features:[0]:assets:ensemble-spread:href:"url for download"
-        features:[0]:assets:reanalysis:href:"url for download"
-        features:[0]:id:"YYYY-MM-reanalysis-era5-pressure-levels"
-        features:[0]:links:[0]:href:"url to self, thus https://stac.cesnet.cz/collections/reanalysis-era5-pressure-levels/items/YYYY-MM"
-        features:[0]:properties:start_datetime:"YYYY-MM-01T00:00:00Z"
-        features:[0]:properties:end_datetime:"YYYY-MM-DDT23:00:00Z"
-        features:[0]:properties:datetime:"YYYY-MM-01T00:00:00Z"
-    curl -X POST "https://stac.cesnet.cz/collections/reanalysis-era5-pressure-levels/items" \
-        -H 'Content-Type: application/json' \
-        -H 'Accept: application/json' \
-        -H 'Authorization: Bearer auth_token_string' \
-        -d @\[feature\]reanalysis-era5-pressure-levels.json

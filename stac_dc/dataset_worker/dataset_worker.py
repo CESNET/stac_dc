@@ -9,10 +9,12 @@ if TYPE_CHECKING:
 
 from typing import Any, List, Tuple
 
+import json
 import logging
 
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
+from tempfile import NamedTemporaryFile
 
 from .exceptions import *
 
@@ -68,10 +70,6 @@ class DatasetWorker(ABC):
         return self._aoi
 
     @abstractmethod
-    def get_id(self, *args: Any, **kwargs: Any) -> str:
-        pass
-
-    @abstractmethod
     def get_catalogue_download_host(self):
         pass
 
@@ -91,10 +89,67 @@ class DatasetWorker(ABC):
     def _get_days_to_download(self, *args: Any, **kwargs: Any) -> List[Tuple[date, bool]]:
         pass
 
-    @abstractmethod
-    def _get_last_downloaded_day(self, *args: Any, **kwargs: Any) -> date:
-        pass
+    def _get_last_downloaded_day(self) -> date:
+        """
+        Reads date of last downloaded day from storage for the current AOI
+        """
+        remote_file_path = f"{self._dataset}/{self._last_downloaded_day_filename}"
 
-    @abstractmethod
-    def _set_last_downloaded_day(self, *args: Any, **kwargs: Any) -> None:
-        pass
+        with self._storage.locked(remote_file_path):
+            try:
+                with NamedTemporaryFile(mode='w+b', suffix='.json', delete=False) as tmp_file:
+                    self._storage.download(remote_file_path=remote_file_path, local_file_path=tmp_file.name)
+                    tmp_file.seek(0)
+                    data = json.load(tmp_file)
+
+            finally:
+                tmp_file.close()
+                Path(tmp_file.name).unlink(missing_ok=True)
+
+        last_downloaded_day = datetime.strptime(
+            data[self._aoi.get_name()], "%Y-%m-%d"
+        ).date()
+
+        self._logger.info(
+            f"Last downloaded day for AOI {self._aoi.get_name()} is {last_downloaded_day.strftime('%Y-%m-%d')}"
+        )
+        return last_downloaded_day
+
+    def _set_last_downloaded_day(self, last_downloaded_day: date) -> None:
+        """
+        Update date of last downloaded day in storage for the current AOI.
+        """
+        remote_file_path = f"{self._dataset}/{self._last_downloaded_day_filename}"
+
+        with self._storage.locked(remote_file_path):
+            try:
+                tmp_file = NamedTemporaryFile(mode="w+b", suffix=".json", delete=False)
+
+                try:
+                    self._storage.download(remote_file_path=remote_file_path, local_file_path=tmp_file.name)
+                    with open(tmp_file.name, "r", encoding="utf-8") as f:
+                        contents = json.load(f)
+                except Exception:
+                    contents = {}
+
+                contents[self._aoi.get_name()] = last_downloaded_day.strftime("%Y-%m-%d")
+
+                with open(tmp_file.name, "w", encoding="utf-8") as f:
+                    json.dump(contents, f, indent=2)
+
+                self._storage.upload(local_file_path=tmp_file.name, remote_file_path=remote_file_path)
+
+            finally:
+                tmp_file.close()
+                Path(tmp_file.name).unlink(missing_ok=True)
+
+        self._logger.info(
+            f"Last downloaded day for dataset {self._dataset} and AOI {self._aoi.get_name()} "
+            f"updated to {last_downloaded_day.strftime('%Y-%m-%d')}"
+        )
+
+    def _save_to_storage(self, file_to_save: Path, remote_path: str) -> None:
+        """Upload file into remote storage."""
+        with self._storage.locked(remote_path):
+            self._storage.upload(remote_file_path=remote_path, local_file_path=file_to_save)
+            self._logger.info(f"Saved {file_to_save.name} to storage as {remote_path}")

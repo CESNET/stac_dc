@@ -37,7 +37,7 @@ class STAC_DC:
                 raise ValueError(f"Unknown area of interest '{aoi}', no corresponding area of interest defined!")
 
             worker = workers_map[dataset]
-            orchestrators.append(DatasetOrchestrator(worker=worker(dataset=dataset, aoi=aois_map[aoi])))
+            orchestrators.append(DatasetOrchestrator(worker=worker(aoi=aois_map[aoi])))
 
         self._orchestrators.extend(orchestrators)
 

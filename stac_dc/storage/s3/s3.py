@@ -3,13 +3,12 @@ import logging
 
 import botocore.exceptions
 
-from pathlib import Path
-
 from stac_dc.storage import Storage
 
 from env import env
 
-from .exceptions.s3 import *
+from .exceptions import *
+from ..exceptions import *
 
 
 class S3(Storage):
@@ -77,6 +76,9 @@ class S3(Storage):
         self._logger.info(f"Downloading S3 key '{bucket_key}' into local file '{local_file_path}'")
 
         try:
+            if not self.exists(remote_file_path=remote_file_path):
+                raise FileNotFoundError(file=remote_file_path)
+
             with open(local_file_path, 'wb') as downloaded_file:
                 self._s3_client.download_fileobj(self._bucket, bucket_key, downloaded_file)
 
@@ -119,18 +121,20 @@ class S3(Storage):
         # File exists now
 
         if expected_length is not None:
-            # Size check required
-            if str(key_head['ContentLength']) == expected_length:
-                # File size checks
+            actual_length = int(key_head["ContentLength"])
+            try:
+                expected_length = int(expected_length)
+            except (TypeError, ValueError):
+                self._logger.warning(f"Invalid expected_length type: {expected_length!r}")
+                return False
+
+            if actual_length == expected_length:
                 return True
-
             else:
-                # File size mismatch
                 self._logger.warning(
-                    f"S3 key '{bucket_key}' length ({key_head['ContentLength']} b) does not match expected length "
-                    f"({expected_length} b)!"
+                    f"S3 key '{bucket_key}' length ({actual_length} B) "
+                    f"does not match expected length ({expected_length} B)!"
                 )
-
                 return False
         else:
             # No size check required

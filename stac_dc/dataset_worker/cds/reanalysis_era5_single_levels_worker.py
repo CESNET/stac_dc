@@ -2,9 +2,11 @@ import json
 import logging
 import requests
 
+from pathlib import Path
+
 from stac_dc.dataset_worker.cds import ERA5Worker
 
-from env import env
+from env import env as env
 
 
 class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
@@ -13,6 +15,9 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
             logger=logging.getLogger(env.get_app__name()),
             **kwargs
     ):
+        self._stac_template_path: Path = (
+                Path(__file__).parent / "stac_templates" / "[feature]reanalysis-era5-single-levels.json"
+        )
         self._product_types = ['reanalysis', 'ensemble_members', 'ensemble_mean', 'ensemble_spread']
         self._variables = [
             '100m_u_component_of_wind', '100m_v_component_of_wind', '10m_u_component_of_neutral_wind',
@@ -144,6 +149,7 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
 
         super().__init__(
             logger=logger,
+            dataset="reanalysis-era5-single-levels",
             **kwargs
         )
 

@@ -21,6 +21,7 @@ class ERA5Worker(CDSWorker):
             logger=logging.getLogger(env.get_app__name()),
             **kwargs,
     ):
+        self._stac_template_path = None
         self._available_hours = [
             "00:00", "01:00", "02:00",
             "03:00", "04:00", "05:00",
@@ -61,7 +62,7 @@ class ERA5Worker(CDSWorker):
 
     def _get_days_to_download(
             self,
-            redownload_threshold: int,  # weeks
+            redownload_threshold: int,  # days
             recent_days: int = 10,  # days
             threshold_window: int = 2  # days
     ) -> List[Tuple[date, bool]]:
@@ -75,7 +76,7 @@ class ERA5Worker(CDSWorker):
 
         # intervals
         gap_days = max(0, (today - last_downloaded).days)
-        redownload_anchor = today - timedelta(weeks=redownload_threshold)
+        redownload_anchor = today - timedelta(days=redownload_threshold)
 
         intervals = [
             # redownload: Force download == True
@@ -107,75 +108,25 @@ class ERA5Worker(CDSWorker):
         days_list: List[Tuple[date, bool]] = sorted(days_map.items())
         return days_list
 
-    def _get_last_downloaded_day(self) -> date:
-        """
-        Method reads date of last downloaded day from storage for the current AOI
-        :return: last_downloaded_day: datetime.date of last downloaded day
-        """
+    def _prepare_stac_feature_json(self, day: date, assets: list[dict]) -> str:
+        with open(self._stac_template_path) as f:
+            feature_dict = json.load(f)
 
-        # delete=False - do not delete tempfile instantly; but finally block needed
-        last_downloaded_day_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.json', delete=False)
+        feature = feature_dict['features'][0]
+        feature['id'] = self.get_id(day)
+        feature['bbox'] = self._aoi.get_bbox()
+        feature['geometry']['coordinates'] = self._aoi.get_polygon()
+        feature['properties'].update({
+            'start_datetime': f"{day}T00:00:00Z",
+            'end_datetime': f"{day}T23:59:59Z",
+            'datetime': f"{day}T00:00:00Z"
+        })
 
-        try:
-            self._storage.download(
-                remote_file_path=f"{self._dataset}/{self._last_downloaded_day_filename}",
-                local_file_path=last_downloaded_day_file.name
-            )
+        for asset in assets:
+            url = f"{self.get_catalogue_download_host()}/{asset['href']}"
+            key = f"{asset['product_type'].replace('_', '-')}-{asset['data_format']}"
+            feature['assets'][key]['href'] = url
 
-            last_downloaded_day = datetime.strptime(
-                json.load(last_downloaded_day_file)[self._aoi.get_name()],
-                "%Y-%m-%d"
-            ).date()
+        feature['assets'] = {k: v for k, v in feature['assets'].items() if v.get('href')}
 
-        finally:
-            # Delete tempfile
-            last_downloaded_day_file.close()
-            Path(last_downloaded_day_file.name).unlink(missing_ok=True)
-
-        self._logger.info(
-            f"Last downloaded day for AOI {self._aoi.get_name()} "
-            f"is {last_downloaded_day.strftime('%Y-%m-%d')}"
-        )
-
-        return last_downloaded_day
-
-    def _set_last_downloaded_day(self, last_downloaded_day: date) -> None:
-        """
-        Update date of last downloaded day in storage for the current AOI.
-        """
-        remote_file_path = f"{self._dataset}/{self._last_downloaded_day_filename}"
-
-        lock_id = self._storage.acquire_lock(remote_file_path=remote_file_path)
-
-        last_downloaded_day_file = tempfile.NamedTemporaryFile(mode="w+b", suffix=".json", delete=False)
-        try:
-            try:
-                self._storage.download(remote_file_path=remote_file_path, local_file_path=last_downloaded_day_file.name)
-                with open(last_downloaded_day_file.name, "r", encoding="utf-8") as f:
-                    last_downloaded_day_file_contents = json.load(f)
-            except Exception:
-                last_downloaded_day_file_contents = {}
-
-            last_downloaded_day_file_contents[self._aoi.get_name()] = last_downloaded_day.strftime("%Y-%m-%d")
-
-            with open(last_downloaded_day_file.name, "w", encoding="utf-8") as f:
-                json.dump(
-                    last_downloaded_day_file_contents, f,
-                    indent=2
-                )
-
-            self._storage.upload(local_file_path=last_downloaded_day_file.name, remote_file_path=remote_file_path)
-
-        finally:
-            last_downloaded_day_file.close()
-            Path(last_downloaded_day_file.name).unlink(missing_ok=True)
-
-            try:
-                self._storage.release_lock(remote_file_path=remote_file_path, lock_id=lock_id)
-            except Exception as e:
-                self._logger.warning(f"Could not release lock for {remote_file_path}: {e}")
-
-        self._logger.info(
-            f"Last downloaded day for AOI {self._aoi.get_name()} "
-            f"updated to {last_downloaded_day.strftime('%Y-%m-%d')}"
-        )
+        return json.dumps(feature_dict, indent=2)

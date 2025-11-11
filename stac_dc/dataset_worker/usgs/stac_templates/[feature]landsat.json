@@ -1,0 +1,65 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "assets": {
+      },
+      "links": [
+        {
+          "href": "",
+          "type": "application/json",
+          "rel": "self"
+        },
+        {
+          "href": "https://www.usgs.gov/landsat-missions/landsat-data-access",
+          "rel": "via"
+        }
+      ],
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+                12.09,
+                48.55
+            ],
+            [
+                18.87,
+                48.55
+            ],
+            [
+                18.87,
+                51.06
+            ],
+            [
+                12.09,
+                51.06
+            ],
+            [
+                12.09,
+                48.55
+            ]
+          ]
+        ]
+      },
+      "collection": "landsat_ot_c2_l1",
+      "properties": {
+        "start_datetime": "",
+        "end_datetime": "",
+        "datetime": ""
+      },
+      "stac_extensions": [
+        "https://stac-extensions.github.io/eo/v1.0.0/schema.json"
+      ],
+      "stac_version": "1.0.0",
+      "type": "Feature",
+      "id": "",
+      "bbox": [
+        12.09,
+        48.55,
+        18.87,
+        51.06
+      ]
+    }
+  ]
+}

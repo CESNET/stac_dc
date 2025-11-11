@@ -2,9 +2,11 @@ import json
 import logging
 import requests
 
+from pathlib import Path
+
 from stac_dc.dataset_worker.cds import ERA5Worker
 
-from env import env
+from env import env as env
 
 
 class ReanalysisERA5LandWorker(ERA5Worker):
@@ -13,6 +15,9 @@ class ReanalysisERA5LandWorker(ERA5Worker):
             logger=logging.getLogger(env.get_app__name()),
             **kwargs
     ):
+        self._stac_template_path: Path = (
+                Path(__file__).parent / "stac_templates" / "[feature]reanalysis-era5-land.json"
+        )
         self._product_types = ['reanalysis']
         self._variables = [
             "2m_dewpoint_temperature",
@@ -69,6 +74,7 @@ class ReanalysisERA5LandWorker(ERA5Worker):
 
         super().__init__(
             logger=logger,
+            dataset="reanalysis-era5-land",
             **kwargs
         )
 

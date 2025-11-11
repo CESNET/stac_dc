@@ -76,7 +76,7 @@ class Env:
             for data_format in os.getenv("ERA5__DATA_FORMATS", default="grib").split(",") if data_format.strip()
         ]
 
-        self._era5['redownload_threshold'] = int(os.getenv("ERA5__REDOWNLOAD_THRESHOLD", "13"))
+        self._era5['redownload_threshold'] = int(os.getenv("ERA5__REDOWNLOAD_THRESHOLD", "91"))  # days
         self._era5['recatalogize_only'] = (
                 os.getenv("ERA5__RECATALOGIZE_ONLY", default="False").lower() in self._true_statements
         )
@@ -113,6 +113,7 @@ class Env:
         self._landsat['m2m_token'] = os.getenv("LANDSAT__M2M_TOKEN", default=None)
         self._landsat['m2m_scene_label'] = os.getenv("LANDSAT__M2M_SCENE_LABEL", default=None)
 
+        self._landsat['redownload_threshold'] = int(os.getenv("LANDSAT__REDOWNLOAD_THRESHOLD", "28")) # days
         self._landsat['recatalogize_only'] = (
                 os.getenv("LANDSAT__RECATALOGIZE_ONLY", default="False").lower() in self._true_statements
         )
