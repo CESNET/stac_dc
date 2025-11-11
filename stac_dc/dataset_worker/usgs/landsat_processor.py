@@ -1,15 +1,22 @@
 import json
 import logging
 
-from typing import Tuple
+import xmltodict
 
-from stactools.landsat import stac as stac_landsat
+from enum import Enum
+from typing import Tuple
 
 from .landsat_tar_utils import LandsatTarUtils
 
 from .exceptions.landsat_processor import *
 
 from env import env
+
+
+class MTL_TYPE(Enum):
+    JSON = "_MTL.json"
+    TXT = "_MTL.txt"
+    XML = "_MTL.xml"
 
 
 class LandsatProcessor:
@@ -73,6 +80,16 @@ class LandsatProcessor:
         final_stac_dict["description"] = final_description
         final_stac_dict["assets"] = final_assets
 
+        try:
+            final_stac_dict["properties"].pop("card4l:specification")
+        except KeyError:
+            pass
+
+        try:
+            final_stac_dict["properties"].pop("card4l:specification_version")
+        except KeyError:
+            pass
+
         self._stac_json_dict = final_stac_dict
 
     def _process_pregenerated_stac(self) -> Path:
@@ -130,33 +147,111 @@ class LandsatProcessor:
 
         return stac_filename
 
-    def _generate_stac_item(self) -> Path:
-        return Path()
-        # TODO
+    def _untar_mtl_from_product(self, type: MTL_TYPE) -> Path:
+        tar_members = self._landsat_tar_utils.get_members()
 
-        try:
-            self._logger.info("Trying to generate STAC item using stactools.")
-            stac_item_dict = (
-                stac_landsat.create_item(str(self._metadata_xml_file_path))
-                .to_dict(include_self_link=False)
+        mtl_files = [m for m in tar_members if m.name.endswith(type.value)]
+
+        if len(mtl_files) != 1:
+            raise LandsatTarFileUnexpectedContents(
+                path=self._tar_path,
+                additional_info=f"Found {len(mtl_files)} MTL files!"
             )
 
-        except Exception as stactools_exception:
-            self._logger.warning("stactools were unable to create STAC item, using pre-generated STAC item.")
-            if self._pregenerated_stac_item_file_path is not None:
-                with open(self._pregenerated_stac_item_file_path, 'r') as pregenerated_stac_item_file:
-                    stac_item_dict = json.loads(pregenerated_stac_item_file.read())
-            else:
-                raise DownloadedFileCannotCreateStacItem(
-                    f"Unable to create STAC item. stactools.landsat exception: {str(stactools_exception)}, " +
-                    f"pregenerated STAC item does not exists!"
-                )
+        mtl_member_file = mtl_files[0]
 
-        self._stac_item_clear(stac_item_dict)
+        metadata_file_path: Path = self._landsat_tar_utils.untar_member(
+            member=mtl_member_file,
+        )
 
-        stac_item_dict['properties']['displayId'] = self._display_id
+        return metadata_file_path
 
-        self._feature_dict = stac_item_dict
+    def _populate_stac_item(self, metadata_dict: dict):
+        stac_template_path = Path(__file__).resolve().parent / "stac_templates" / "[feature]landsat.json"
+        with stac_template_path.open("r", encoding="utf-8") as stac_template_file:
+            stac_json_dict = json.load(stac_template_file)
+
+        stac_json_dict["features"][0]["properties"]["temporary"] = True
+
+        stac_json_dict["features"][0]["id"] = (
+            metadata_dict["LANDSAT_METADATA_FILE"]["PRODUCT_CONTENTS"]["LANDSAT_PRODUCT_ID"]
+        )
+
+        stac_json_dict["features"][0]["collection"] = self._dataset
+
+        datetime = (
+                metadata_dict["LANDSAT_METADATA_FILE"]["IMAGE_ATTRIBUTES"]["DATE_ACQUIRED"] +
+                "T" +
+                metadata_dict["LANDSAT_METADATA_FILE"]["IMAGE_ATTRIBUTES"]["SCENE_CENTER_TIME"]
+        )
+        stac_json_dict["features"][0]["properties"]["start_datetime"] = datetime
+        stac_json_dict["features"][0]["properties"]["end_datetime"] = datetime
+        stac_json_dict["features"][0]["properties"]["datetime"] = datetime
+
+        corners_lats = [
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_UL_LAT_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_UR_LAT_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_LL_LAT_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_LR_LAT_PRODUCT"]),
+        ]
+
+        corners_lons = [
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_UL_LON_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_UR_LON_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_LL_LON_PRODUCT"]),
+            float(metadata_dict["LANDSAT_METADATA_FILE"]["PROJECTION_ATTRIBUTES"]["CORNER_LR_LON_PRODUCT"]),
+        ]
+
+        bbox = [
+            min(corners_lons),  # WEST
+            min(corners_lats),  # SOUTH
+            max(corners_lons),  # EAST
+            max(corners_lats),  # NORTH
+        ]
+        stac_json_dict["features"][0]["bbox"] = bbox
+
+        polygon = [[
+            [bbox[0], bbox[1]],  # LOWER LEFT
+            [bbox[2], bbox[1]],  # LOWER RIGHT
+            [bbox[2], bbox[3]],  # UPPER RIGHT
+            [bbox[0], bbox[3]],  # UPPER LEFT
+            [bbox[0], bbox[1]],  # LOWER LEFT - back to beginning
+        ]]
+        stac_json_dict["features"][0]["geometry"]["coordinates"] = polygon
+
+        stac_json_dict["features"][0]["assets"].update(
+            {
+                "tar": {
+                    "href": f"{env.get_landsat()["stac_asset_download_root"]}{self._dataset}/{self._tar_path.name}",
+                    "title": "Full tar file",
+                    "description": "Full tar file as published by USGS",
+                    "type": "application/x-tar",
+                    "roles": ["data"]
+                }
+            }
+        )
+
+        return stac_json_dict
+
+    def _generate_stac_item(self) -> Path:
+        metadata_file_path: Path = self._untar_mtl_from_product(type=MTL_TYPE.XML)
+        try:
+            with metadata_file_path.open("r", encoding="utf-8") as metadata_file:
+                metadata_dict = xmltodict.parse(metadata_file.read())
+        finally:
+            if metadata_file_path.exists():
+                metadata_file_path.unlink(missing_ok=True)
+
+        print(metadata_dict)
+
+        stac_dict = self._populate_stac_item(metadata_dict=metadata_dict)
+        self._stac_json_dict = stac_dict["features"][0]
+
+        stac_filename = Path(f"{Path(self._tar_path.parent) / self._stac_json_dict['id']}_stac.json")
+        with open(stac_filename, "w") as f:
+            json.dump(self._stac_json_dict, f, indent=4)
+
+        return stac_filename
 
     def process_landsat_tar(self) -> Tuple[Path, bool]:
         try:

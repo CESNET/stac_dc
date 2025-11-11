@@ -17,8 +17,13 @@ class LandsatDatasetNotSpecified(LandsatProcessorException):
 
 
 class LandsatTarFileUnexpectedContents(LandsatProcessorException):
-    def __init__(self, path: Path):
-        message = f"Unexpected contents in Landsat TAR file: {path}"
+    def __init__(self, path: Path = None, message="Unexpected contents in Landsat TAR file!", additional_info=None):
+        if path is not None:
+            message = f"{message} Path: {path}"
+
+        if additional_info is not None:
+            message = f"{message} Additional info: {additional_info}"
+
         super().__init__(message)
 
 

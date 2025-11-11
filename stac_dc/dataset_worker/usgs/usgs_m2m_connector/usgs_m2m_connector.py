@@ -74,14 +74,48 @@ class USGSM2MConnector:
             "token": self._token
         }
 
-        response_content = self._send_request('login-token', api_payload)
-        response_data = json.loads(response_content)
-        self._api_token = response_data.get('data')
+        max_attempts = 5
+        base_delay = 5  # seconds
 
-        if (not self._api_token) or (self._api_token is None):
-            raise USGSM2MTokenNotObtainedException()
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response_content = self._send_request("login-token", api_payload)
+                response_data = json.loads(response_content)
+                self._api_token = response_data.get("data")
 
-        self._logger.info("Successfully obtained M2M API access token.")
+                if not self._api_token:
+                    raise USGSM2MTokenNotObtainedException()
+
+                self._logger.info("Successfully obtained M2M API access token.")
+                return
+
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                text = e.response.text
+
+                self._logger.warning(f"HTTP {code} on login-token: {text}")
+
+                if "RATE_LIMIT" in text or code in (429, 500):
+                    sleep_time = base_delay * (2 ** (attempt - 1))
+                    self._logger.warning(
+                        f"Rate limit or transient error detected. Waiting {sleep_time} seconds before retry "
+                        f"({attempt}/{max_attempts})"
+                    )
+                    time.sleep(sleep_time)
+                    continue
+
+                raise USGSM2MRequestNotOK(status_code=code, response_text=text)
+
+            except httpx.RequestError as e:
+                sleep_time = base_delay * (2 ** (attempt - 1))
+                self._logger.warning(f"Network error: {e}. Retrying in {sleep_time} seconds ({attempt}/{max_attempts})")
+                time.sleep(sleep_time)
+                continue
+
+        raise USGSM2MRequestNotOK(
+            status_code=429,
+            response_text=f"Exceeded retry limit ({max_attempts}) after rate limiting or server errors"
+        )
 
     def _refresh_token_if_expired(self):
         """

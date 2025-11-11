@@ -18,15 +18,23 @@ class LandsatTarUtils:
         with tarfile.open(self._tar_file_path, mode="r") as tar_file:
             return tar_file.getmembers()
 
-    def untar_member(self, member: TarInfo, untar_dir: Path = None) -> Path:
+    def untar_member(self, member: tarfile.TarInfo, untar_dir: Path = None) -> Path:
         if untar_dir is None:
             untar_dir = self._tar_file_path.parent
 
         untar_dir.mkdir(parents=True, exist_ok=True)
+
         untar_path = untar_dir / member.name
 
-        with tarfile.open(self._tar_file_path, mode="r") as tar_file:
-            tar_file.extract(member, path=untar_dir)
+        untar_path = untar_path.resolve()
+        if not str(untar_path).startswith(str(untar_dir.resolve())):
+            raise TarFilePathTraversalRisk(path=untar_path)
+
+        untar_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with tarfile.open(self._tar_file_path, "r") as tar:
+            with tar.extractfile(member) as src, open(untar_path, "wb") as dst:
+                dst.write(src.read())
 
         return untar_path
 

@@ -1,6 +1,5 @@
-import logging
-import os
 import tempfile
+import shutil
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime, time
@@ -25,7 +24,12 @@ class USGSWorker(DatasetWorker, ABC):
         downloadable_files_days = self.search_by_daterange(start=day, end=day)
 
         for file_attributes in downloadable_files_days:
-            with tempfile.TemporaryDirectory() as tmpdirname:
+            self._logger.info(f"Will download file {file_attributes["displayId"]}")
+
+            tmpdirname: str | None = None
+
+            try:
+                tmpdirname = tempfile.mkdtemp()
                 downloaded_file_path: Path = self.download(
                     display_id=file_attributes["displayId"],
                     download_url=file_attributes["url"],
@@ -34,9 +38,21 @@ class USGSWorker(DatasetWorker, ABC):
                 )
 
                 if downloaded_file_path is None:
-                    continue
+                    pass
+                else:
+                    self._process_landsat_tar(downloaded_file_path)
 
-                self._process_landsat_tar(downloaded_file_path)
+            except Exception:
+                raise
+
+            finally:
+                try:
+                    shutil.rmtree(tmpdirname, ignore_errors=True)
+                except Exception as cleanup_err:
+                    self._logger.warning(f"Cannot delete {tmpdirname}! Error: {cleanup_err}")
+
+    def _process_item(self, display_id: str):
+        pass
 
     def search_by_daterange(self, start: date, end: date) -> List[Dict]:
         start_datetime = datetime.combine(start, time.min)  # 00:00:00
@@ -49,7 +65,7 @@ class USGSWorker(DatasetWorker, ABC):
         )
 
     def search_by_id(self, id: str) -> List[Dict]:
-        pass
+        return self._m2m_api_connector.get_files_by_id()
 
     def download(self, download_url: str, output_dir: str, display_id: str = "", force_redownload=False) -> Path | None:
         if not force_redownload:

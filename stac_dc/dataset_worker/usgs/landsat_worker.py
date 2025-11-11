@@ -156,7 +156,8 @@ class LandsatWorker(USGSWorker):
 
         for item_missing_usgs_stac in items_missing_usgs_stac:
             self._logger.info(f"[{item_missing_usgs_stac}] Started processing]")
-            # TODO
+
+            self._process_item(item_missing_usgs_stac)
 
     def _process_landsat_tar(self, landsat_tar_path: Path):
         landsat_processor = LandsatProcessor(

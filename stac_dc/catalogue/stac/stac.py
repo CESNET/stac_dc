@@ -31,13 +31,11 @@ class STAC:
     # ------------------------
 
     def register_item(self, json_data: str | dict, dataset: str) -> str:
+        """Register a STAC item. If conflict (409) occurs, replace existing item."""
         self._ensure_token()
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 
-        if isinstance(json_data, dict):
-            payload = json_data
-        else:
-            payload = json.loads(json_data)
+        payload = json_data if isinstance(json_data, dict) else json.loads(json_data)
 
         response = self._send_request(
             f"/collections/{dataset}/items",
@@ -46,22 +44,41 @@ class STAC:
             method="POST",
         )
 
+        try:
+            content = response.json()
+        except ValueError:
+            raise STACRequestNotOK(
+                status_code=response.status_code,
+                message="Invalid JSON response from STAC API",
+                url=response.url if hasattr(response, "url") else None
+            )
+
+        if response.status_code == 409:
+            try:
+                feature_id = content.get("ErrorMessage", "").split(" ")[1]
+                if not feature_id or not feature_id.strip():
+                    raise KeyError
+            except KeyError:
+                raise STACError("STAC conflict detected, but no feature ID found in error response.")
+
+            self._logger.warning(f"STAC item conflict detected, replacing {feature_id}")
+            self.delete_stac_item(dataset, feature_id)
+            return self.register_item(payload, dataset)
+
         if response.status_code != 200:
-            raise STACRequestNotOK(status_code=response.status_code)
+            raise STACRequestNotOK(
+                status_code=response.status_code,
+                message=f"Unexpected response status from STAC: {response.status_code}",
+                dataset=dataset,
+            )
 
-        content = response.json()
-        errors = content.get("errors")
-        if errors:
-            error = errors[0]
-            if error["code"] == 409:
-                feature_id = error["error"].split(" ")[1]
-                self.delete_stac_item(dataset, feature_id)
-                return self.register_item(payload, dataset)
+        try:
+            feature_id = content["features"][0]["featureId"]
+        except (KeyError, IndexError, TypeError):
+            raise STACError("Invalid STAC response format — missing featureId.")
 
-            raise Exception(f"{error['error']}")
-
-        feature_id = content["features"][0]["featureId"]
         self._logger.info(f"STAC item registered: {feature_id}")
+
         return feature_id
 
     def delete_stac_item(self, dataset: str, feature_id: str):
@@ -88,7 +105,7 @@ class STAC:
             raise STACCredentialsNotProvided()
 
         url = urljoin(self._stac_host, "auth")
-        response = httpx.post(url, auth=(self._username, self._password), timeout=10)
+        response = httpx.get(url, auth=(self._username, self._password), timeout=10)
 
         if response.status_code != 200:
             raise STACRequestNotOK(status_code=response.status_code)

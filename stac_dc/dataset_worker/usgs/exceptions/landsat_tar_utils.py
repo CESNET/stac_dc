@@ -16,3 +16,9 @@ class TarFileNotExistsException(LandsatTarUtilsException):
         if path:
             message = message + " Given path: " + str(path)
         super().__init__(message)
+
+class TarFilePathTraversalRisk(LandsatTarUtilsException):
+    def __init__(self, message="Unsecure path inside TAR!", path: Path = None):
+        if path is not None:
+            message = f"{message} Path inside TAR: {str(path)}"
+        super().__init__(message)
