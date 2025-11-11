@@ -130,4 +130,6 @@ class ERA5Worker(CDSWorker):
 
         feature['assets'] = {k: v for k, v in feature['assets'].items() if v.get('href')}
 
+        feature_dict=feature_dict["features"][0]
+
         return json.dumps(feature_dict, indent=2)
