@@ -18,10 +18,11 @@ from env import env
 class ERA5Worker(CDSWorker):
     def __init__(
             self,
+            stac_template_path: Path,
             logger=logging.getLogger(env.get_app__name()),
             **kwargs,
     ):
-        self._stac_template_path = None
+        self._stac_template_path: Path = stac_template_path
         self._available_hours = [
             "00:00", "01:00", "02:00",
             "03:00", "04:00", "05:00",

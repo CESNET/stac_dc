@@ -15,8 +15,8 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
             logger=logging.getLogger(env.get_app__name()),
             **kwargs
     ):
-        self._stac_template_path: Path = (
-                Path(__file__).parent / "stac_templates" / "[feature]reanalysis-era5-single-levels.json"
+        stac_template_path: Path = (
+                Path(__file__).resolve().parent / "stac_templates" / "[feature]reanalysis-era5-single-levels.json"
         )
         self._product_types = ['reanalysis', 'ensemble_members', 'ensemble_mean', 'ensemble_spread']
         self._variables = [
@@ -150,6 +150,7 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
         super().__init__(
             logger=logger,
             dataset="reanalysis-era5-single-levels",
+            stac_template_path=stac_template_path,
             **kwargs
         )
 
