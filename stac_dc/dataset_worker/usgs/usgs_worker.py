@@ -24,7 +24,7 @@ class USGSWorker(DatasetWorker, ABC):
         downloadable_files_days = self.search_by_daterange(start=day, end=day)
 
         for file_attributes in downloadable_files_days:
-            self._logger.info(f"Will download file {file_attributes["displayId"]}")
+            self._logger.info(f"Will download item of displayId: {file_attributes["displayId"]}")
 
             tmpdirname: str | None = None
 
