@@ -42,23 +42,20 @@ class LandsatWorker(USGSWorker):
 
     def _get_days_to_download(self, *args: Any, **kwargs: Any) -> List[Tuple[date, bool]]:
         today = datetime.now(timezone.utc).date()
-        starting_day = (
-                (
-                    self._get_last_downloaded_day()
-                )
-                or (
-                        today - timedelta(days=env.get_landsat().get("redownload_threshold"))
-                )
-        )
+        redownload_threshold = env.get_landsat().get("redownload_threshold")
 
-        if starting_day > today:
-            starting_day = today
+        last_downloaded_day = self._get_last_downloaded_day()
+        if last_downloaded_day:
+            from_day = max(last_downloaded_day, today - timedelta(days=redownload_threshold))
+        else:
+            from_day = today - timedelta(days=redownload_threshold)
+
+        if from_day > today:
+            from_day = today
 
         days_to_download: List[Tuple[date, bool]] = []
-
-        delta_days = (today - starting_day).days
-        for i in range(delta_days + 1):  # +1, today inclusive
-            day = starting_day + timedelta(days=i)
+        for i in range((today - from_day).days + 1):  # +1 (today inclusive)
+            day = from_day + timedelta(days=i)
             days_to_download.append((day, False))
 
         return days_to_download
