@@ -46,7 +46,7 @@ class LandsatWorker(USGSWorker):
 
         last_downloaded_day = self._get_last_downloaded_day()
         if last_downloaded_day:
-            from_day = max(last_downloaded_day, today - timedelta(days=redownload_threshold))
+            from_day = max(last_downloaded_day, today) - timedelta(days=redownload_threshold)
         else:
             from_day = today - timedelta(days=redownload_threshold)
 
