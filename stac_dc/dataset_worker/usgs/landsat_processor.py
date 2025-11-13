@@ -242,8 +242,6 @@ class LandsatProcessor:
             if metadata_file_path.exists():
                 metadata_file_path.unlink(missing_ok=True)
 
-        print(metadata_dict)
-
         stac_dict = self._populate_stac_item(metadata_dict=metadata_dict)
         self._stac_json_dict = stac_dict["features"][0]
 
