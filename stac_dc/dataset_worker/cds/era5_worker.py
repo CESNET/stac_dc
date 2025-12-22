@@ -1,6 +1,5 @@
 import json
 import logging
-import tempfile
 
 from abc import abstractmethod
 from datetime import date, datetime, timedelta, timezone
@@ -12,13 +11,14 @@ from stac_dc.dataset_worker.cds import CDSWorker
 from stac_dc.storage import S3
 from stac_dc.catalogue import STAC
 
-from env import env
+from env import env as env
 
 
 class ERA5Worker(CDSWorker):
     def __init__(
             self,
             stac_template_path: Path,
+            catalogue_collection: str,
             logger=logging.getLogger(env.get_app__name()),
             **kwargs,
     ):
@@ -47,6 +47,7 @@ class ERA5Worker(CDSWorker):
                 username=env.get_era5()["stac_username"],
                 password=env.get_era5()["stac_password"],
                 stac_host=env.get_era5()["stac_host"],
+                collection=catalogue_collection if catalogue_collection is not None else kwargs["dataset"]
             ),
             **kwargs,
         )
@@ -130,6 +131,6 @@ class ERA5Worker(CDSWorker):
 
         feature['assets'] = {k: v for k, v in feature['assets'].items() if v.get('href')}
 
-        feature_dict=feature_dict["features"][0]
+        feature_dict = feature_dict["features"][0]
 
         return json.dumps(feature_dict, indent=2)

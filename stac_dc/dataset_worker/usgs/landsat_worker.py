@@ -18,7 +18,12 @@ from env import env
 
 
 class LandsatWorker(USGSWorker):
-    def __init__(self, logger=logging.getLogger(env.get_app__name()), **kwargs):
+    def __init__(
+            self,
+            catalogue_collection: str = None,
+            logger=logging.getLogger(env.get_app__name()),
+            **kwargs
+    ):
         super().__init__(
             logger=logger,
             storage=S3(
@@ -31,6 +36,7 @@ class LandsatWorker(USGSWorker):
                 username=env.get_landsat()["stac_username"],
                 password=env.get_landsat()["stac_password"],
                 stac_host=env.get_landsat()["stac_host"],
+                collection=catalogue_collection if catalogue_collection is not None else kwargs["dataset"]
             ),
             **kwargs
         )
@@ -177,7 +183,7 @@ class LandsatWorker(USGSWorker):
 
         with open(path_to_stac_file, "r") as stac_file:
             json_data = json.load(stac_file)
-            self._catalogue.register_item(dataset=self._dataset, json_data=json_data)
+            self._catalogue.register_item(json_data=json_data)
 
         self._save_to_storage(
             file_to_save=path_to_stac_file,

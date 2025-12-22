@@ -12,9 +12,10 @@ from datetime import date
 
 
 class Catalogue(ABC):
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, collection: str):
+        self._collection = collection
         self._logger = logger
 
     @abstractmethod
-    def register_item(self, json_data: str | dict, dataset: str) -> str:
+    def register_item(self, json_data: str | dict) -> str:
         pass
