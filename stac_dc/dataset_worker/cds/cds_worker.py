@@ -11,7 +11,7 @@ import requests
 
 from stac_dc.dataset_worker.dataset_worker import DatasetWorker
 from .exceptions import CDSWorkerDataNotAvailableYet
-from env import env
+from env import env as env
 
 
 class CDSWorker(DatasetWorker, ABC):
@@ -160,7 +160,7 @@ class CDSWorker(DatasetWorker, ABC):
             remote_path = f"{self._dataset}/{self._get_file_parent_dir(day)}.json"
             self._save_to_storage(file_to_save=tmp_file_path, remote_path=remote_path)
 
-            feature_id = self._catalogue.register_item(dataset=self._dataset, json_data=feature_json)
+            feature_id = self._catalogue.register_item(json_data=feature_json)
             self._logger.info(f"[{day:%Y-%m-%d}] Registered STAC item ({feature_id}) and uploaded JSON to storage.")
 
         except Exception as e:

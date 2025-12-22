@@ -9,28 +9,35 @@ from urllib.parse import urljoin
 
 from env import env
 from .exceptions import *
+from stac_dc.catalogue import Catalogue
 
 
-class STAC:
+class STAC(Catalogue):
+    _collection: str
+
     _username: str
     _password: str
+
     _stac_token: str | None = None
     _api_token_valid_until: datetime = datetime.fromtimestamp(0, tz=timezone.utc)
 
-    def __init__(self, username: str, password: str, stac_host: str, logger=None):
+    def __init__(self, username: str, password: str, stac_host: str, collection: str, logger=None):
         if stac_host is None:
             raise STACHostNotSpecified()
 
         self._stac_host = stac_host
+
         self._username = username
         self._password = password
+
+        super().__init__(collection=collection, logger=logger)
         self._logger = logger or logging.getLogger(env.get_app__name())
 
     # ------------------------
     # Public API
     # ------------------------
 
-    def register_item(self, json_data: str | dict, dataset: str) -> str:
+    def register_item(self, json_data: str | dict) -> str:
         """Register a STAC item. If conflict (409) occurs, replace existing item."""
         self._ensure_token()
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
@@ -38,7 +45,7 @@ class STAC:
         payload = json_data if isinstance(json_data, dict) else json.loads(json_data)
 
         response = self._send_request(
-            f"/collections/{dataset}/items",
+            f"/collections/{self._collection}/items",
             payload=payload,
             headers=headers,
             method="POST",
@@ -62,14 +69,14 @@ class STAC:
                 raise STACError("STAC conflict detected, but no feature ID found in error response.")
 
             self._logger.warning(f"STAC item conflict detected, replacing {feature_id}")
-            self.delete_stac_item(dataset, feature_id)
-            return self.register_item(payload, dataset)
+            self.delete_stac_item(feature_id)
+            return self.register_item(payload)
 
         if response.status_code != 200:
             raise STACRequestNotOK(
                 status_code=response.status_code,
                 message=f"Unexpected response status from STAC: {response.status_code}",
-                dataset=dataset,
+                dataset=self._collection,
             )
 
         try:
@@ -81,11 +88,11 @@ class STAC:
 
         return feature_id
 
-    def delete_stac_item(self, dataset: str, feature_id: str):
-        self._logger.info(f"Deleting STAC item {feature_id} from dataset {dataset}")
+    def delete_stac_item(self, feature_id: str):
+        self._logger.info(f"Deleting STAC item {feature_id} from dataset {self._collection}")
         headers = {'Accept': 'application/json'}
         response = self._send_request(
-            f"/collections/{dataset}/items/{feature_id}",
+            f"/collections/{self._collection}/items/{feature_id}",
             headers=headers,
             method="DELETE",
         )
