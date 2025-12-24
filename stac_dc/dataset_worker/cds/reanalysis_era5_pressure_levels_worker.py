@@ -1,23 +1,11 @@
-import json
 import logging
-import requests
 
-from pathlib import Path
-
+from stac_dc.dataset_worker.aoi import AOI
 from stac_dc.dataset_worker.cds import ERA5Worker
-
-from env import env as env
 
 
 class ReanalysisERA5PressureLevelsWorker(ERA5Worker):
-    def __init__(
-            self,
-            logger=logging.getLogger(env.get_app__name()),
-            **kwargs
-    ):
-        stac_template_path: Path = (
-                Path(__file__).resolve().parent / "stac_templates" / "[feature]reanalysis-era5-pressure-levels.json"
-        )
+    def __init__(self, aoi: AOI, logger: logging.Logger | None = None):
         self._product_types = ['reanalysis', 'ensemble_members', 'ensemble_mean', 'ensemble_spread']
         self._variables = [
             'divergence',
@@ -44,11 +32,21 @@ class ReanalysisERA5PressureLevelsWorker(ERA5Worker):
             '850', '875', '900', '925', '950', '975', '1000',
         ]
 
+        self._available_hours = [
+            "00:00", "01:00", "02:00",
+            "03:00", "04:00", "05:00",
+            "06:00", "07:00", "08:00",
+            "09:00", "10:00", "11:00",
+            "12:00", "13:00", "14:00",
+            "15:00", "16:00", "17:00",
+            "18:00", "19:00", "20:00",
+            "21:00", "22:00", "23:00"
+        ]
+
         super().__init__(
-            logger=logger,
             dataset="reanalysis-era5-pressure-levels",
-            stac_template_path=stac_template_path,
-            **kwargs
+            aoi=aoi,
+            logger=logger,
         )
 
     def _prepare_cdsapi_call_dict(self, day, product_type, data_format):
@@ -63,18 +61,9 @@ class ReanalysisERA5PressureLevelsWorker(ERA5Worker):
             'data_format': data_format,
             'download_format': 'unarchived',
             'area': [
-                self._aoi.get_bbox()[2],  # North
-                self._aoi.get_bbox()[1],  # West
-                self._aoi.get_bbox()[0],  # South
-                self._aoi.get_bbox()[3],  # East
+                self._aoi.get_bbox()[2],
+                self._aoi.get_bbox()[1],
+                self._aoi.get_bbox()[0],
+                self._aoi.get_bbox()[3],
             ],
         }
-
-    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
-        exception_content = json.loads(cds_exception.response.content.decode())
-
-        return (
-                cds_exception.response.status_code == 400
-                and
-                "None of the data you have requested is available yet" in exception_content.get("detail", "")
-        )

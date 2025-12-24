@@ -1,38 +1,47 @@
+import json
 import logging
 import tempfile
-
-from abc import ABC, abstractmethod
-from datetime import date
-from pathlib import Path
-from typing import List, Optional, Tuple
 
 import cdsapi
 import requests
 
+from abc import ABC, abstractmethod
+from datetime import date
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional, Tuple
+from urllib.parse import urljoin
+
+from stac_dc.catalogue import Catalogue, CDSItem
+from stac_dc.catalogue.asset import Asset
+from stac_dc.dataset_worker.aoi import AOI
 from stac_dc.dataset_worker.dataset_worker import DatasetWorker
+from stac_dc.storage import Storage
 from .exceptions import CDSWorkerDataNotAvailableYet
-from env import env as env
 
 
 class CDSWorker(DatasetWorker, ABC):
-    _product_types: list[str]
-    _variables: list[str]
-    _available_hours: list[str]
-    _formats: list[str]
-
     def __init__(
             self,
-            formats: Optional[list[str]] = None,
-            logger: logging.Logger = logging.getLogger(env.get_app__name()),
-            **kwargs,
+            dataset: str,
+            catalogue_collection: str | None,
+            aoi: AOI,
+            storage: Storage,
+            catalogue: Catalogue,
+            logger: logging.Logger | None = None,
     ):
-        self._formats = formats or []
-        super().__init__(logger=logger, **kwargs)
+        super().__init__(
+            dataset=dataset,
+            catalogue_collection=catalogue_collection,
+            aoi=aoi,
+            storage=storage,
+            catalogue=catalogue,
+            logger=logger,
+        )
 
     # ------------------------
     # Abstract methods for workers
     # ------------------------
-
     @abstractmethod
     def _prepare_cdsapi_call_dict(self, day: date, product_type: str, data_format: str) -> dict:
         """Prepare the request dictionary for cdsapi.Client().retrieve()."""
@@ -45,13 +54,25 @@ class CDSWorker(DatasetWorker, ABC):
 
     @abstractmethod
     def get_catalogue_download_host(self) -> str:
-        """Return host of the catalogue service (e.g., CDS)."""
+        """Return host of the catalogue service (like download.stac.cesnet.cz)."""
         pass
 
-    # ------------------------
-    # Helpers
-    # ------------------------
+    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
+        exception_content = json.loads(cds_exception.response.content.decode())
 
+        return (
+                cds_exception.response.status_code == 400
+                and
+                (
+                        "None of the data you have requested is available yet" in exception_content.get("traceback", "")
+                        or
+                        "None of the data you have requested is available yet" in exception_content.get("detail", "")
+                )
+        )
+
+    # ------------------------
+    # Helpers for file paths
+    # ------------------------
     def _get_file_parent_dir(self, day: date) -> str:
         return f"{day:%Y/%m/%d}/{self._aoi.get_name()}"
 
@@ -59,12 +80,11 @@ class CDSWorker(DatasetWorker, ABC):
         return f"{self._get_file_parent_dir(day)}/{product_type}.{data_format}"
 
     def get_id(self, day: date) -> str:
-        return f"{self._dataset}_{day:%Y_%m_%d}_{self._aoi.get_name()}"
+        return f"{day:%Y%m%d}_{self._aoi.get_name()}"
 
     # ------------------------
-    # Main worker
+    # Main pipeline
     # ------------------------
-
     def run(self, **kwargs) -> None:
         """Main pipeline: download missing assets and register them into catalogue."""
         self._logger.debug("CDS pipeline started")
@@ -74,20 +94,19 @@ class CDSWorker(DatasetWorker, ABC):
         )
 
         try:
-            for day_to_download in days_to_download:
-                day, force_redownload = day_to_download
-
+            for day, force_redownload in days_to_download:
                 self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
 
-                assets = self._process_day(day, force_redownload)
+                assets: List[Asset] = self._process_day(day, force_redownload)
 
                 if assets:
-                    self._register_catalogue_item(day, assets)
+                    catalogue_item = self._build_catalogue_item(day, assets)
+                    self._register_catalogue_item(catalogue_item)
+                    self._save_catalogue_item(day, catalogue_item)
                 else:
                     self._logger.info(f"[{day:%Y-%m-%d}] Skipping catalogue item (no assets)")
 
                 self._set_last_downloaded_day(day)
-
                 self._logger.info(f"[{day:%Y-%m-%d}] Finished processing")
 
                 self.reset_run_attempt()
@@ -95,17 +114,16 @@ class CDSWorker(DatasetWorker, ABC):
         except CDSWorkerDataNotAvailableYet:
             self._logger.info("All downloaded, no more data available.")
 
-    # ---------------------------------------------------------------------
-    # Helpers for run()
-    # ---------------------------------------------------------------------
-
-    def _process_day(self, day: date, force_redownload: bool) -> list[dict[str, str]]:
+    # ------------------------
+    # Process one day
+    # ------------------------
+    def _process_day(self, day: date, force_redownload: bool) -> List[Asset]:
         """Download all required assets for one day and return their metadata."""
-        assets: list[dict[str, str]] = []
+        assets: List[Asset] = []
 
         for product_type in self._product_types:
             for data_format in self._formats:
-                storage_path = f"{self._dataset}/{self._get_file_path(day, product_type, data_format)}"
+                storage_path = self._get_file_path(day, product_type, data_format)
                 tmp_file: Optional[Path] = None
 
                 try:
@@ -114,19 +132,11 @@ class CDSWorker(DatasetWorker, ABC):
                         assets.append(self._make_asset(product_type, data_format, storage_path))
                         continue
 
-                    tmp_file = None
+                    tmp_file = self._download_from_api(day, product_type, data_format)
 
-                    try:
-                        tmp_file = self._download_from_api(day, product_type, data_format)
-                    except CDSWorkerDataNotAvailableYet as e:
-                        self._logger.info(f"[{day:%Y-%m-%d}] {e.message}")
-                        raise e
-
-                    if not tmp_file:
-                        continue
-
-                    self._save_to_storage(tmp_file, storage_path)
-                    assets.append(self._make_asset(product_type, data_format, storage_path))
+                    if tmp_file:
+                        self._save_to_storage(tmp_file, storage_path)
+                        assets.append(self._make_asset(product_type, data_format, storage_path))
 
                 except Exception as e:
                     self._logger.error(
@@ -141,53 +151,41 @@ class CDSWorker(DatasetWorker, ABC):
 
         return assets
 
-    @abstractmethod
-    def _prepare_stac_feature_json(self, day: date, assets: list[dict]) -> str:
-        pass
+    # ------------------------
+    # Helpers
+    # ------------------------
+    def _get_path_to_catalogue_file(self, day: date) -> str:
+        return f"{self._get_file_parent_dir(day)}.json"
 
-    def _register_catalogue_item(self, day: date, assets: list[dict[str, str]]) -> None:
-        feature_json = self._prepare_stac_feature_json(day, assets)
-
-        tmp_file_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".json", encoding="utf-8", delete=False
-            ) as tmp_file:
-                tmp_file.write(feature_json)
-                tmp_file_path = Path(tmp_file.name)
-
-
-            remote_path = f"{self._dataset}/{self._get_file_parent_dir(day)}.json"
-            self._save_to_storage(file_to_save=tmp_file_path, remote_path=remote_path)
-
-            feature_id = self._catalogue.register_item(json_data=feature_json)
-            self._logger.info(f"[{day:%Y-%m-%d}] Registered STAC item ({feature_id}) and uploaded JSON to storage.")
-
-        except Exception as e:
-            self._logger.error(f"[{day:%Y-%m-%d}] Failed to register STAC item: {e}", exc_info=True)
-            raise
-        finally:
-            if tmp_file_path and tmp_file_path.exists():
-                tmp_file_path.unlink(missing_ok=True)
-
-    @staticmethod
-    def _make_asset(product_type: str, data_format: str, href: str) -> dict[str, str]:
-        return {
-            "product_type": product_type,
-            "data_format": data_format,
-            "href": href,
+    def _make_asset(self, product_type: str, data_format: str, storage_path: str) -> Asset:
+        product_types_map = {
+            "reanalysis": "Reanalysis",
+            "ensemble_members": "Ensemble members",
+            "ensemble_mean": "Ensemble mean",
+            "ensemble_spread": "Ensemble spread",
         }
 
-    @abstractmethod
-    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
-        pass
+        mimetypes_map = {
+            "grib": "application/grib",
+            "nc": "application/netcdf",
+        }
+
+        formats_name_map = {
+            "grib": "GRIB",
+            "nc": "NetCDF",
+        }
+
+        key = f"{product_type}-{data_format}"
+        href = urljoin(self.get_catalogue_download_host(), storage_path)
+        title = f"{product_types_map[product_type]} product type in {formats_name_map[data_format]} format"
+        return Asset(key=key, href=href, type=mimetypes_map[data_format], title=title)
 
     # ------------------------
     # CDS API connection
     # ------------------------
-
     def _call_cdsapi(self, request: dict) -> Path:
         """Perform CDS API request and return path to the downloaded file."""
+
         downloaded_file = tempfile.NamedTemporaryFile(
             mode="w+b",
             suffix=f".{request['data_format']}",
@@ -203,7 +201,7 @@ class CDSWorker(DatasetWorker, ABC):
             )
         except requests.exceptions.HTTPError as http_error:
             if self._check_dataset_not_available(cds_exception=http_error):
-                raise CDSWorkerDataNotAvailableYet(f"Requested data not available yet")
+                raise CDSWorkerDataNotAvailableYet("Requested data not available yet")
             else:
                 raise http_error
 
@@ -217,3 +215,14 @@ class CDSWorker(DatasetWorker, ABC):
         )
         self._logger.info(f"[{day:%Y-%m-%d}] Downloaded {product_type}.{data_format} into {file_path.name}")
         return file_path
+
+    def _build_catalogue_item(self, day: date, assets: List[Asset]) -> CDSItem:
+        return CDSItem(
+            id=self.get_id(day),
+            start_datetime=datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=timezone.utc),
+            aoi=self._aoi,
+            assets=assets,
+            dataset=self._dataset,
+            collection=self._catalogue_collection,
+        )

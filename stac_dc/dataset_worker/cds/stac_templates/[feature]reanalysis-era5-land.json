@@ -2,29 +2,12 @@
   "type": "FeatureCollection",
   "features": [
     {
-      "assets": {
-        "reanalysis-grib": {
-          "href": null,
-          "type": "application/grib",
-          "title": "Reanalysis product type in GRIB format"
-        },
-        "reanalysis-nc": {
-          "href": null,
-          "type": "application/netcdf",
-          "title": "Reanalysis product type in NetCDF format"
-        }
-      },
+      "assets": {},
       "links": [
         {
           "href": "",
           "type": "application/json",
           "rel": "self"
-        },
-        {
-          "href": "https://stac.cesnet.cz/collections/reanalysis-era5-land",
-          "type": "application/json",
-          "rel": "collection",
-          "title": "ERA5-Land hourly data on single levels"
         },
         {
           "href": "https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-land",
@@ -35,7 +18,6 @@
         "type": "Polygon",
         "coordinates": []
       },
-      "collection": "reanalysis-era5-land",
       "properties": {
         "start_datetime": "",
         "end_datetime": "",

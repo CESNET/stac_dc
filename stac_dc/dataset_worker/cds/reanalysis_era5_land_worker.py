@@ -1,24 +1,24 @@
-import json
 import logging
-import requests
-
-from pathlib import Path
-
-from stac_dc.dataset_worker.cds import ERA5Worker
 
 from env import env as env
+from stac_dc.dataset_worker.aoi import AOI
+from stac_dc.dataset_worker.cds import ERA5Worker
 
 
 class ReanalysisERA5LandWorker(ERA5Worker):
     def __init__(
             self,
-            logger=logging.getLogger(env.get_app__name()),
-            **kwargs
+            aoi: AOI,
+            logger: logging.Logger | None = None,
     ):
-        stac_template_path: Path = (
-                Path(__file__).resolve().parent / "stac_templates" / "[feature]reanalysis-era5-land.json"
+        super().__init__(
+            dataset="reanalysis-era5-land",
+            aoi=aoi,
+            logger=logger,
         )
+
         self._product_types = ['reanalysis']
+
         self._variables = [
             "2m_dewpoint_temperature",
             "2m_temperature",
@@ -72,12 +72,16 @@ class ReanalysisERA5LandWorker(ERA5Worker):
             "leaf_area_index_low_vegetation"
         ]
 
-        super().__init__(
-            logger=logger,
-            dataset="reanalysis-era5-land",
-            stac_template_path=stac_template_path,
-            **kwargs
-        )
+        self._available_hours = [
+            "00:00", "01:00", "02:00",
+            "03:00", "04:00", "05:00",
+            "06:00", "07:00", "08:00",
+            "09:00", "10:00", "11:00",
+            "12:00", "13:00", "14:00",
+            "15:00", "16:00", "17:00",
+            "18:00", "19:00", "20:00",
+            "21:00", "22:00", "23:00"
+        ]
 
     def _prepare_cdsapi_call_dict(self, day, product_type, data_format):
         return {
@@ -95,12 +99,3 @@ class ReanalysisERA5LandWorker(ERA5Worker):
                 self._aoi.get_bbox()[3],  # East
             ],
         }
-
-    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
-        exception_content = json.loads(cds_exception.response.content.decode())
-
-        return (
-                cds_exception.response.status_code == 400
-                and
-                "None of the data you have requested is available yet" in exception_content.get("traceback", "")
-        )

@@ -1,6 +1,5 @@
 from .dataset_worker import DatasetWorker
 
-from .cds import CDSWorker
 from .cds import ReanalysisERA5SingleLevelsWorker
 from .cds import ReanalysisERA5PressureLevelsWorker
 from .cds import ReanalysisERA5LandWorker
