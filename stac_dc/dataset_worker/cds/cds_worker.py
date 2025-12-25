@@ -80,7 +80,7 @@ class CDSWorker(DatasetWorker, ABC):
         return f"{self._get_file_parent_dir(day)}/{product_type}.{data_format}"
 
     def get_id(self, day: date) -> str:
-        return f"{day:%Y%m%d}_{self._aoi.get_name()}"
+        return f"{self._catalogue_collection}_{day:%Y%m%d}_{self._aoi.get_name()}"
 
     # ------------------------
     # Main pipeline
@@ -129,14 +129,26 @@ class CDSWorker(DatasetWorker, ABC):
                 try:
                     if not force_redownload and self._storage.exists(storage_path):
                         self._logger.info(f"[{day:%Y-%m-%d}] Already exists: {storage_path}")
-                        assets.append(self._make_asset(product_type, data_format, storage_path))
+                        assets.append(
+                            self._make_asset(
+                                product_type,
+                                data_format,
+                                self._storage.get_storage_full_path(storage_path)
+                            )
+                        )
                         continue
 
                     tmp_file = self._download_from_api(day, product_type, data_format)
 
                     if tmp_file:
                         self._save_to_storage(tmp_file, storage_path)
-                        assets.append(self._make_asset(product_type, data_format, storage_path))
+                        assets.append(
+                            self._make_asset(
+                                product_type,
+                                data_format,
+                                self._storage.get_storage_full_path(storage_path)
+                            )
+                        )
 
                 except Exception as e:
                     self._logger.error(

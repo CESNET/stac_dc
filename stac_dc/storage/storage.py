@@ -22,22 +22,22 @@ class Storage(ABC):
         self._logger = logger or logging.getLogger(env.get_app__name())
 
     # ---------------- PATH HANDLING ----------------
-    def _full_path(self, relative_path: str) -> str:
+    def get_storage_full_path(self, relative_path: str) -> str:
         relative_path = relative_path.lstrip("/")
         return f"{self._collection}/{relative_path}" if self._collection else relative_path
 
     # ---------------- PUBLIC API ----------------
     def upload(self, remote_file_path: str, local_file_path: Path | str):
-        return self._upload(self._full_path(remote_file_path), local_file_path)
+        return self._upload(self.get_storage_full_path(remote_file_path), local_file_path)
 
     def download(self, remote_file_path: str, local_file_path: Path | str):
-        return self._download(self._full_path(remote_file_path), local_file_path)
+        return self._download(self.get_storage_full_path(remote_file_path), local_file_path)
 
     def delete(self, remote_file_path: str):
-        return self._delete(self._full_path(remote_file_path))
+        return self._delete(self.get_storage_full_path(remote_file_path))
 
     def exists(self, remote_file_path: str, expected_length: int | None = None) -> bool:
-        return self._exists(self._full_path(remote_file_path), expected_length)
+        return self._exists(self.get_storage_full_path(remote_file_path), expected_length)
 
     # ---------------- LOW-LEVEL IMPLEMENTATION ----------------
     @abstractmethod
