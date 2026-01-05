@@ -157,16 +157,24 @@ class DatasetWorker(ABC):
                 if tmp_path:
                     tmp_path.unlink(missing_ok=True)
 
-        last_day = datetime.strptime(
-            data[self._aoi.get_name()],
-            "%Y-%m-%d",
-        ).date()
+        try:
+            last_day = datetime.strptime(
+                data[self._aoi.get_name()],
+                "%Y-%m-%d",
+            ).date()
 
-        self._logger.info(
-            f"Last downloaded day for AOI {self._aoi.get_name()}: {last_day}"
-        )
+            self._logger.info(
+                f"Last downloaded day for AOI {self._aoi.get_name()}: {last_day}"
+            )
 
-        return last_day
+            return last_day
+
+        except KeyError:
+            self._logger.warning(
+                f"Last downloaded day for AOI {self._aoi.get_name()} is not specified! Returning today."
+            )
+
+            return date.today()
 
     def _set_last_downloaded_day(self, last_downloaded_day: date) -> None:
         with self._storage.locked(self._last_downloaded_day_filename):

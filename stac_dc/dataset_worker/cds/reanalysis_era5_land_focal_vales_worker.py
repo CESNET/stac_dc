@@ -5,7 +5,7 @@ from stac_dc.dataset_worker.aoi import AOI
 from stac_dc.dataset_worker.cds import ERA5Worker
 
 
-class ReanalysisERA5LandWorker(ERA5Worker):
+class ReanalysisERA5LandFocalValesWorker(ERA5Worker):
     def __init__(
             self,
             aoi: AOI,
@@ -13,6 +13,7 @@ class ReanalysisERA5LandWorker(ERA5Worker):
     ):
         super().__init__(
             dataset="reanalysis-era5-land",
+            catalogue_collection="focal-reanalysis-era5-land",
             aoi=aoi,
             logger=logger,
         )

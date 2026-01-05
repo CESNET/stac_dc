@@ -17,7 +17,7 @@ from stac_dc.catalogue.asset import Asset
 from stac_dc.dataset_worker.aoi import AOI
 from stac_dc.dataset_worker.dataset_worker import DatasetWorker
 from stac_dc.storage import Storage
-from .exceptions import CDSWorkerDataNotAvailableYet
+from .exceptions import CDSWorkerDataNotAvailable
 
 
 class CDSWorker(DatasetWorker, ABC):
@@ -60,7 +60,7 @@ class CDSWorker(DatasetWorker, ABC):
     def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
         exception_content = json.loads(cds_exception.response.content.decode())
 
-        return (
+        if (
                 cds_exception.response.status_code == 400
                 and
                 (
@@ -68,7 +68,19 @@ class CDSWorker(DatasetWorker, ABC):
                         or
                         "None of the data you have requested is available yet" in exception_content.get("detail", "")
                 )
-        )
+        ):
+            raise CDSWorkerDataNotAvailable(yet=True)
+
+        if(
+                cds_exception.response.status_code == 400
+                and
+                (
+                        "MARS returned no data" in exception_content.get("traceback", "")
+                )
+        ):
+            raise CDSWorkerDataNotAvailable()
+
+        raise cds_exception
 
     # ------------------------
     # Helpers for file paths
@@ -93,10 +105,10 @@ class CDSWorker(DatasetWorker, ABC):
             redownload_threshold=self._get_redownload_threshold()
         )
 
-        try:
-            for day, force_redownload in days_to_download:
-                self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
+        for day, force_redownload in days_to_download:
+            self._logger.info(f"[{day:%Y-%m-%d}] Start processing")
 
+            try:
                 assets: List[Asset] = self._process_day(day, force_redownload)
 
                 if assets:
@@ -111,8 +123,14 @@ class CDSWorker(DatasetWorker, ABC):
 
                 self.reset_run_attempt()
 
-        except CDSWorkerDataNotAvailableYet:
-            self._logger.info("All downloaded, no more data available.")
+            except CDSWorkerDataNotAvailable as e:
+                if e.not_available_yet():
+                    self._logger.info("All downloaded, no more data available.")
+                    return
+
+                else:
+                    self._logger.warn("Data not available. Maybe dataset does not cover this area/date..?")
+                    continue
 
     # ------------------------
     # Process one day
@@ -152,10 +170,9 @@ class CDSWorker(DatasetWorker, ABC):
 
                 except Exception as e:
                     self._logger.error(
-                        f"[{day:%Y-%m-%d}] Error downloading {product_type}.{data_format}: {e}",
-                        exc_info=True,
+                        f"[{day:%Y-%m-%d}] Error downloading {product_type}.{data_format}: {e}"
                     )
-                    raise
+                    raise e
 
                 finally:
                     if tmp_file:
@@ -212,10 +229,7 @@ class CDSWorker(DatasetWorker, ABC):
                 downloaded_file.name,
             )
         except requests.exceptions.HTTPError as http_error:
-            if self._check_dataset_not_available(cds_exception=http_error):
-                raise CDSWorkerDataNotAvailableYet("Requested data not available yet")
-            else:
-                raise http_error
+            self._check_dataset_not_available(http_error)
 
         return Path(downloaded_file.name)
 
