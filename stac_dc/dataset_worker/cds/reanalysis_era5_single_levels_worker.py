@@ -1,23 +1,11 @@
-import json
 import logging
-import requests
 
-from pathlib import Path
-
+from stac_dc.dataset_worker.aoi import AOI
 from stac_dc.dataset_worker.cds import ERA5Worker
-
-from env import env as env
 
 
 class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
-    def __init__(
-            self,
-            logger=logging.getLogger(env.get_app__name()),
-            **kwargs
-    ):
-        stac_template_path: Path = (
-                Path(__file__).resolve().parent / "stac_templates" / "[feature]reanalysis-era5-single-levels.json"
-        )
+    def __init__(self, aoi: AOI, logger: logging.Logger | None = None):
         self._product_types = ['reanalysis', 'ensemble_members', 'ensemble_mean', 'ensemble_spread']
         self._variables = [
             '100m_u_component_of_wind', '100m_v_component_of_wind', '10m_u_component_of_neutral_wind',
@@ -148,10 +136,9 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
         ]
 
         super().__init__(
-            logger=logger,
             dataset="reanalysis-era5-single-levels",
-            stac_template_path=stac_template_path,
-            **kwargs
+            aoi=aoi,
+            logger=logger,
         )
 
     def _prepare_cdsapi_call_dict(self, day, product_type, data_format):
@@ -165,18 +152,9 @@ class ReanalysisERA5SingleLevelsWorker(ERA5Worker):
             'data_format': data_format,
             'download_format': 'unarchived',
             'area': [
-                self._aoi.get_bbox()[2],  # North
-                self._aoi.get_bbox()[1],  # West
-                self._aoi.get_bbox()[0],  # South
-                self._aoi.get_bbox()[3],  # East
+                self._aoi.get_bbox()[2],
+                self._aoi.get_bbox()[1],
+                self._aoi.get_bbox()[0],
+                self._aoi.get_bbox()[3],
             ],
         }
-
-    def _check_dataset_not_available(self, cds_exception: requests.exceptions.HTTPError) -> bool:
-        exception_content = json.loads(cds_exception.response.content.decode())
-
-        return (
-                cds_exception.response.status_code == 400
-                and
-                "None of the data you have requested is available yet" in exception_content.get("detail", "")
-        )

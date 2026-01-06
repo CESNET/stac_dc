@@ -9,7 +9,7 @@ services:
 #    logging:
 #      - driver: "journald"
 #      - options:
-#          tag: "stac-dc"
+#          tag: "stac_catalogue-dc"
 #          labels: "app"
 #    labels:
-#      - "app=stac-dc"
+#      - "app=stac_catalogue-dc"

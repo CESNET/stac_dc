@@ -82,7 +82,7 @@ class LandsatWorker(USGSWorker):
                             raise ValueError(
                                 f"File {self._items_missing_usgs_stac_filename} does not contain valid list!")
 
-                    except FileNotFoundError:
+                    except StorageFileNotFoundError:
                         pass
 
             finally:
@@ -114,7 +114,7 @@ class LandsatWorker(USGSWorker):
                                 f"File {self._items_missing_usgs_stac_filename} does not contain valid list!"
                             )
 
-                    except FileNotFoundError:
+                    except StorageFileNotFoundError:
                         data = []
 
             finally:
