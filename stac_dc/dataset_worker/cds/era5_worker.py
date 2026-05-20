@@ -40,7 +40,7 @@ class ERA5Worker(CDSWorker):
 
         super().__init__(
             dataset=dataset,
-            catalogue_collection=collection,
+            catalogue_collection=catalogue_collection,
             aoi=aoi,
             storage=storage,
             catalogue=catalogue,
