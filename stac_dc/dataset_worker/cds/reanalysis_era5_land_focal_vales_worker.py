@@ -13,6 +13,7 @@ class ReanalysisERA5LandFocalValesWorker(ERA5Worker):
     ):
         super().__init__(
             dataset="reanalysis-era5-land",
+            s3_collection="reanalysis-era5-land",
             catalogue_collection="focal-reanalysis-era5-land",
             aoi=aoi,
             logger=logger,

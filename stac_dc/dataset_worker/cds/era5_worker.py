@@ -16,24 +16,26 @@ class ERA5Worker(CDSWorker):
             self,
             dataset: str,
             aoi: AOI,
+            s3_collection: str | None = None,
             catalogue_collection: str | None = None,
             logger: logging.Logger | None = None,
     ):
-        collection = catalogue_collection or dataset
+        catalogue_collection = catalogue_collection or dataset
+        s3_collection = s3_collection or catalogue_collection
 
         storage = S3(
             s3_host=env.get_era5()["s3_host"],
             access_key=env.get_era5()["s3_access_key"],
             secret_key=env.get_era5()["s3_secret_key"],
             host_bucket=env.get_era5()["s3_host_bucket"],
-            collection=collection,
+            collection=s3_collection,
         )
 
         catalogue = STAC(
             stac_host=env.get_era5()["stac_host"],
             username=env.get_era5()["stac_username"],
             password=env.get_era5()["stac_password"],
-            collection=collection,
+            collection=catalogue_collection,
         )
 
         super().__init__(
